@@ -1,0 +1,25 @@
+[project]
+name = "invoice-agent"
+version = "0.1.0"
+description = "An invoice-processing agent: a fine-tuned small LLM (served via vLLM) extracts structured data from invoices/receipts, wrapped in a Pydantic AI agent with validation, fallback to a frontier model, a ledger, and observability."
+readme = "README.md"
+authors = [
+    { name = "Stephen", email = "stearsail@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.13.4",
+]
+
+[project.scripts]
+invoice-agent = "invoice_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.20",
+]
