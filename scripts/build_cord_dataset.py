@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from invoice_agent.schema import Invoice
 from invoice_agent.converters.cord import convert_example
 from datasets import load_dataset, Dataset
 from pydantic import ValidationError
