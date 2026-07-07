@@ -15,9 +15,9 @@ class Party(BaseModel):
 class LineItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     description: str | None = None
-    unit_price: Decimal
-    quantity: Decimal
-    line_total: Decimal
+    unit_price: Decimal | None = None
+    quantity: Decimal | None = None
+    line_total: Decimal | None = None
 
 
 class Invoice(BaseModel):
@@ -31,4 +31,8 @@ class Invoice(BaseModel):
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     line_items: list[LineItem] = Field(default_factory=list)
     grand_total: Decimal
+    subtotal: Decimal | None = None
+    tax: Decimal | None = None
+    service_charge: Decimal | None = None
+    discount: Decimal | None = None
     confidence_notes: list[str] = Field(default_factory=list)
