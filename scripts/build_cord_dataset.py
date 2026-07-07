@@ -3,17 +3,23 @@ from pathlib import Path
 from invoice_agent.converters.cord import convert_example
 from datasets import load_dataset, Dataset
 from pydantic import ValidationError
+from PIL import Image
 
-output_dir = Path(__file__).parent.parent / "data" / "processed"
+output_dir = Path(__file__).parent.parent / "data" / "processed" / "CORD"
 output_dir.mkdir(parents=True, exist_ok=True)
 
-train_set = load_dataset("naver-clova-ix/cord-v2", split="train")
-test_set = load_dataset("naver-clova-ix/cord-v2", split="test")
+image_output_dir = output_dir / "images"
 
 
-def build_dataset(output_file: str, dataset: Dataset, split: str = "train") -> None:
+def _save_image(image: Image.Image, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.convert("RGB").save(path, format="PNG")
+
+
+def build_dataset(dataset: Dataset, split: str = "train") -> None:
     records, skipped = [], []
     for i, example in enumerate(dataset):
+        img_path = image_output_dir / split / f"{i}.png"
         loaded = json.loads(example["ground_truth"])
         annotation = loaded["gt_parse"]
         try:
@@ -26,21 +32,36 @@ def build_dataset(output_file: str, dataset: Dataset, split: str = "train") -> N
             "split": split,
             "index": i,
             "invoice": invoice.model_dump(mode="json"),
+            "image_path": str(img_path.relative_to(output_dir)),
         }
         records.append(record)
+        _save_image(example["image"], img_path)
 
-    with open(output_dir / f"{output_file}_{split}.jsonl", "w", encoding="utf-8") as f:
+    with open(output_dir / f"{split}.jsonl", "w", encoding="utf-8") as f:
         for line in records:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
-    with open(
-        output_dir / f"{output_file}_{split}_skipped.jsonl", "w", encoding="utf-8"
-    ) as f:
+    with open(output_dir / f"{split}_skipped.jsonl", "w", encoding="utf-8") as f:
         for line in skipped:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
     print(f"Succesfully added {len(records)} lines to JSONL \nFailed {len(skipped)}")
 
 
-build_dataset("cord", train_set, "train")
-build_dataset("cord", test_set, "test")
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Build the CORD dataset from Hugging Face"
+    )
+    parser.add_argument(
+        "--split",
+        type=str,
+        choices=["train", "test", "validation"],
+        default="train",
+        help="Which CORD split to convert",
+    )
+    args = parser.parse_args()
+
+    dataset = load_dataset("naver-clova-ix/cord-v2", split=args.split)
+    build_dataset(dataset, args.split)

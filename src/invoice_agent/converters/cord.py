@@ -71,6 +71,7 @@ def _drop_sign(value: str | list[str] | None) -> str | list[str] | None:
 
 
 def convert_example(gt_parse: dict) -> Invoice:
+
     total_price = _parse_price((gt_parse.get("total") or {}).get("total_price"))
 
     sub_total = _sub_total_section(gt_parse)

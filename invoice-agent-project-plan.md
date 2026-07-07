@@ -6,7 +6,7 @@ Portfolio project for ML/AI Engineer roles.
 
 ## 1. Project Summary
 
-An end-to-end agentic system that ingests messy invoices and receipts (digital PDFs, scans, photos), extracts structured data using a **fine-tuned small language model** served locally, validates and reconciles the results, writes them to a ledger, and flags anomalies. A frontier model (Claude/GPT) acts as the agent's planner and as a fallback for documents the specialist cannot handle confidently.
+An end-to-end agentic system that ingests messy invoices and receipts (digital PDFs, scans, photos), extracts structured data using a **fine-tuned small vision-language model** served locally, validates and reconciles the results, writes them to a ledger, and flags anomalies. A frontier model (Claude/GPT) acts as the agent's planner and as a fallback for documents the specialist cannot handle confidently.
 
 **The thesis the project demonstrates:** for high-volume, narrow tasks, a fine-tuned 3–8B model can match frontier-model accuracy at a fraction of the cost and latency — and the right production architecture routes routine work to the specialist while reserving the frontier model for reasoning and edge cases.
 
@@ -81,16 +81,16 @@ Task: write converters mapping each dataset's annotation format into the unified
 
 ### 5.1 Extraction pipeline decision
 
-**Primary path (build this):** text pipeline — OCR first (PyMuPDF for digital PDFs, Tesseract for scans), fine-tune on `raw OCR text → JSON`.
+**Primary path (build this):** fine-tune a small VLM (Qwen-VL family) directly on `image → JSON` — no OCR step in the critical path.
 
-**Stretch comparison arm:** fine-tune a small VLM (Qwen-VL family) on `image → JSON` and add "OCR+LLM vs end-to-end VLM" as a benchmark dimension in the final writeup.
+**Stretch comparison arm:** text pipeline — OCR first (PyMuPDF for digital PDFs, Tesseract for scans), fine-tune on `raw OCR text → JSON`, and add "end-to-end VLM vs OCR+LLM" as a benchmark dimension in the final writeup. (Investigated early: default Tesseract output on low-contrast, photographed receipts was poor enough — including some images returning no text at all — to motivate leading with the VLM path instead.)
 
 ### 5.2 System overview
 
 Documents enter as a folder of PDFs or uploads through the UI. A Pydantic AI agent, with a frontier model as its planner, orchestrates four tools:
 
-- **ingest_document** — OCR via PyMuPDF (digital PDFs) or Tesseract (scans)
-- **extract_invoice** — the fine-tuned 8B specialist served via vLLM
+- **ingest_document** — render documents to images (PyMuPDF for PDFs; scans/photos used as-is)
+- **extract_invoice** — the fine-tuned VLM specialist served via vLLM
 - **validate_and_reconcile** — Pydantic schema checks plus math checks
 - **ledger_write / flag_anomaly** — persistence to SQLite/Postgres and anomaly flagging
 
@@ -101,7 +101,7 @@ Every run is traced in Langfuse, and at least one tool is exposed via MCP.
 ### 5.3 Agent behavior
 
 1. Scan input folder / receive upload; classify document type
-2. OCR, then call `extract_invoice` (specialist model)
+2. Render to image(s), then call `extract_invoice` (VLM specialist)
 3. Validate: schema conformance, line items sum to subtotal, VAT math, duplicate invoice-number check
 4. On low confidence or validation failure: retry with adjusted context, then escalate to the frontier model, then escalate to the human-review queue
 5. Write validated records to ledger; flag anomalies (duplicates, outlier amounts, failed reconciliation)
@@ -111,7 +111,7 @@ The fallback chain **is** the cost-optimization story: measure what fraction of 
 
 ## 6. Tech Stack
 
-- **Base model:** Qwen3-8B (or 4B) — strong small model, good multilingual (RO/EN), permissive license; Llama 3.1 8B as alternative
+- **Base model:** Qwen2-VL (2B/7B) — small vision-language model, good multilingual (RO/EN), permissive license
 - **Fine-tuning:** HF Transformers + PEFT (QLoRA) via Axolotl or Unsloth — single-GPU friendly
 - **Compute:** RunPod / Vast.ai / Kaggle / Colab Pro — a QLoRA run on 8B costs a few dollars
 - **Experiment tracking:** MLflow (self-hosted) — every run logged from day one; also serves as the model registry for versioning fine-tuned and quantized checkpoints
@@ -121,7 +121,7 @@ The fallback chain **is** the cost-optimization story: measure what fraction of 
 - **Tool protocol:** MCP for at least one tool — shows currency with the ecosystem
 - **Validation:** Pydantic everywhere
 - **Observability:** Langfuse (self-hosted) — trace every agent run
-- **OCR/ingestion:** PyMuPDF + Tesseract
+- **Ingestion:** PyMuPDF (PDF-to-image rendering only — no OCR in the primary pipeline; Tesseract stays scoped to the stretch comparison arm)
 - **Backend:** FastAPI
 - **Frontend demo:** Streamlit or Gradio — upload, watch the agent work, browse the ledger
 - **Storage:** SQLite (dev), Postgres (compose)
@@ -141,7 +141,7 @@ Built **before** fine-tuning, and never modified after the first fine-tuning run
 - Valid-JSON / schema-conformance rate
 - Latency (p50/p95) and cost per document
 
-**Benchmark matrix:** golden set × {GPT-4-class, Claude, base Qwen3-8B untuned, fine-tuned, fine-tuned + quantized}. This table is the centerpiece of the project.
+**Benchmark matrix:** golden set × {GPT-4-class, Claude, base Qwen2-VL untuned, fine-tuned, fine-tuned + quantized}. This table is the centerpiece of the project.
 
 **System-level metrics (Milestone 2):**
 
@@ -171,7 +171,7 @@ Built **before** fine-tuning, and never modified after the first fine-tuning run
 **Phase 3: Evaluation harness**
 
 - Implement all model-level metrics + benchmark runner
-- OCR ingestion module (PyMuPDF/Tesseract)
+- Image ingestion module (PyMuPDF for PDF rendering)
 - Deliverable: `evaluate.py` producing a full metrics report from any endpoint
 
 **Phase 4: Baselines**
@@ -235,7 +235,7 @@ Built **before** fine-tuning, and never modified after the first fine-tuning run
 
 - **Dataset conversion drags on** — timebox converters; the synthetic generator can cover gaps
 - **Fine-tuned model underperforms** — the baseline phase catches this early; iterate on the data mixture before blaming the model
-- **OCR quality bottlenecks everything** — report extraction accuracy conditioned on OCR quality; consider the VLM arm
+- **VLM fine-tuning is heavier than a text-only path** — a small model size (2B) and single-GPU QLoRA keep it tractable; the OCR+LLM arm stays available as a fallback comparison if VLM training stalls
 - **Scope creep (categorization, chatbots, dashboards)** — hard rule: no new features after the ledger/MCP phase. Depth over breadth
 - **Golden set contamination** — test set locked in a separate directory, touched only by `evaluate.py`
 - **Milestone 2 stalls** — Milestone 1 is independently complete and polished, by design

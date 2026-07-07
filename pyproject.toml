@@ -8,7 +8,8 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "datasets>=5.0.0",
+    "mlflow>=3.14.0",
+    "pillow>=12.3.0",
     "pydantic>=2.13.4",
 ]
 
@@ -22,7 +23,13 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "jupyter>=1.1.1",
-    "pillow>=12.3.0",
     "pytest>=9.1.1",
     "ruff>=0.15.20",
+]
+train = [
+    "datasets>=4.3.0",
+    "mlflow>=3.14.0",
+    "transformers==4.57.1",
+    "trl>=0.24.0",
+    "unsloth>=2026.5.2",
 ]
