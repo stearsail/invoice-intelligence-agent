@@ -103,7 +103,7 @@ Every run is traced in Langfuse, and at least one tool is exposed via MCP.
 1. Scan input folder / receive upload; classify document type
 2. Render to image(s), then call `extract_invoice` (VLM specialist)
 3. Validate: schema conformance, line items sum to subtotal, VAT math, duplicate invoice-number check
-4. On low confidence or validation failure: retry with adjusted context, then escalate to the frontier model, then escalate to the human-review queue
+4. On parse/validation failure: escalate to the frontier model. On reconciliation failure (math doesn't check out) specifically: if it's the specialist's result, retry once via the frontier model, since a genuine misread is still worth a second, more capable attempt; if the frontier's own result *also* fails reconciliation, escalate straight to the human-review queue rather than looping — two independent extractions agreeing on numbers that still don't add up means the discrepancy is very likely intrinsic to the document (a real discount, rounding, till adjustment), not an extraction error a model can fix by trying again
 5. Write validated records to ledger; flag anomalies (duplicates, outlier amounts, failed reconciliation)
 6. Produce a batch summary report
 

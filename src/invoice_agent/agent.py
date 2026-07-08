@@ -1,33 +1,51 @@
 import base64
-
-from typing_extensions import Annotated, TypedDict
-from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import InMemorySaver
+from typing_extensions import Literal, TypedDict
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import Command
-from langgraph.runtime import Runtime
 from invoice_agent.schema import Invoice
+from invoice_agent.reconciliation import reconcile
+from langchain_anthropic import ChatAnthropic
 from openai import OpenAI
+import os
+import getpass
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+
+if "ANTHROPIC_API_KEY" not in os.environ:
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API Key: ")
+
+model = ChatAnthropic(
+    model="claude-haiku-4-5-20251001",
+    temperature=0.1,
+    max_tokens_to_sample=4096,
+    max_retries=0,
+)
 
 
 class State(TypedDict):
     image: str
     invoice: Invoice
     parse_error: str | None
+    reconciliation_issues: list[str]
+    attempt: Literal["specialist", "frontier"]
 
 
 class Context(TypedDict):
     model_name: str = "qwen3-vl-cord-merged"
 
 
-def extract_invoice(state: State) -> None:
+def _load_image_b64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+# TODO: replace manual JSON parsing with vLLM's native structured-output /
+# guided decoding (constrains generation to match the schema directly),
+# once server-side config for it is set up. Would reduce the specialist's
+# malformed-output rate.
+def extract_invoice(state: State) -> dict:
     print("Running invoice information extraction")
     img_path = state["image"]
-    with open(img_path, "rb") as f:
-        img_b64 = base64.b64encode(f.read()).decode()
-
+    img_b64 = _load_image_b64(img_path)
     response = client.chat.completions.create(
         model="qwen3-vl-cord-merged",
         messages=[
@@ -49,9 +67,52 @@ def extract_invoice(state: State) -> None:
     invoice_str = response.choices[0].message.content
     try:
         invoice = Invoice.model_validate_json(invoice_str)
-        return {"invoice": invoice, "parse_error": None}
+        return {"invoice": invoice, "parse_error": None, "attempt": "specialist"}
     except Exception as e:
         return {"parse_error": f"Pydantic Validation error: {e}"}
+
+
+def _call_frontier(state: State, extra_context: str = "") -> dict:
+    img_path = state["image"]
+    img_b64 = _load_image_b64(img_path)
+    message = {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": """Extract structured data from this receipt/invoice image as JSON. 
+                Read the currency, number formatting, and locale directly from what's visible in the document 
+                — do not assume any specific country's conventions."""
+                + extra_context,
+            },
+            {
+                "type": "image",
+                "base64": img_b64,
+                "mime_type": "image/png",
+            },
+        ],
+    }
+
+    structured_model = model.with_structured_output(Invoice)
+    invoice = structured_model.invoke([message])
+    return {"invoice": invoice, "attempt": "frontier"}
+
+
+def frontier_extract_fallback(state: State) -> dict:
+    return _call_frontier(state)
+
+
+def frontier_review_fallback(state: State) -> dict:
+    context = (
+        f"Validation and reconciliation issues exist in the previous extraction "
+        f"— take these into consideration: {state['reconciliation_issues']}"
+    )
+    return _call_frontier(state, extra_context=context)
+
+
+def validate_reconcile(state: State) -> dict:
+    issues = reconcile(state["invoice"])
+    return {"reconciliation_issues": issues}
 
 
 def route_after_parsing(state: State) -> str:
@@ -60,31 +121,40 @@ def route_after_parsing(state: State) -> str:
     return "needs_fallback"
 
 
-def frontier_fallback(state: State) -> None:
-    print("I'm the frontier model, I'll fix this up for you")
-    
-
-
-def no_fallback(state: State) -> None:
-    print("No fallback was needed, let the frontier model chill")
-    print(state["invoice"])
+def route_after_reconcile(state: State) -> str:
+    if not state["reconciliation_issues"]:
+        return "reconciled"
+    elif state["attempt"] == "frontier":
+        return "needs_human_review"
+    return "needs_review"
 
 
 builder = StateGraph(state_schema=State, context_schema=Context)
 builder.add_node("extract_invoice", extract_invoice)
-builder.add_node("no_fallback", no_fallback)
-builder.add_node("frontier_fallback", frontier_fallback)
+builder.add_node("frontier_extract_fallback", frontier_extract_fallback)
+builder.add_node("validate_reconcile", validate_reconcile)
+builder.add_node("frontier_review_fallback", frontier_review_fallback)
 
 builder.add_edge(START, "extract_invoice")
 builder.add_conditional_edges(
     "extract_invoice",
     route_after_parsing,
-    {"success": "no_fallback", "needs_fallback": "frontier_fallback"},
+    {"success": "validate_reconcile", "needs_fallback": "frontier_extract_fallback"},
 )
-builder.add_edge("no_fallback", END)
-builder.add_edge("frontier_fallback", END)
-graph = builder.compile()
+builder.add_edge("frontier_extract_fallback", "validate_reconcile")
+builder.add_conditional_edges(
+    "validate_reconcile",
+    route_after_reconcile,
+    {
+        "needs_review": "frontier_review_fallback",
+        "reconciled": END,
+        "needs_human_review": END,
+    },
+)
+builder.add_edge("frontier_review_fallback", "validate_reconcile")
 
-result = graph.invoke(
-    {"image": "data/processed/CORD/images/test/0.png", "invoice": None}
-)
+if __name__ == "__main__":
+    graph = builder.compile()
+    result = graph.invoke(
+        {"image": "data/processed/CORD/images/test/99.png", "invoice": None}
+    )
