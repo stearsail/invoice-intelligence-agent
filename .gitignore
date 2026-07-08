@@ -11,9 +11,11 @@ wheels/
 
 notes/
 outputs/
+models/
 data/
 explore/
 CLAUDE.md
 
 **/unsloth_compiled_cache
 mlflow.db
+.env

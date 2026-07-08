@@ -24,7 +24,7 @@ If Milestone 2 stalls, Milestone 1 alone is a complete, polished portfolio piece
 - **Model optimization** — quantization (AWQ/GGUF), latency benchmarking
 - **Inference serving** — vLLM behind an OpenAI-compatible endpoint
 - **Evaluation rigor** — per-field metrics, locked test set, cost/latency/accuracy benchmark
-- **Agent engineering** — Pydantic AI orchestration, tool calling, retry/fallback routing, MCP
+- **Agent engineering** — LangGraph orchestration, tool calling, retry/fallback routing, MCP
 - **Production engineering** — FastAPI, Docker Compose, CI with GitHub Actions, Langfuse tracing
 - **Communication** — architecture diagram, benchmark writeup, honest failure analysis
 
@@ -87,7 +87,7 @@ Task: write converters mapping each dataset's annotation format into the unified
 
 ### 5.2 System overview
 
-Documents enter as a folder of PDFs or uploads through the UI. A Pydantic AI agent, with a frontier model as its planner, orchestrates four tools:
+Documents enter as a folder of PDFs or uploads through the UI. A LangGraph-orchestrated agent, with a frontier model invoked as planner and fallback extractor, routes them through four tools:
 
 - **ingest_document** — render documents to images (PyMuPDF for PDFs; scans/photos used as-is)
 - **extract_invoice** — the fine-tuned VLM specialist served via vLLM
@@ -117,7 +117,7 @@ The fallback chain **is** the cost-optimization story: measure what fraction of 
 - **Experiment tracking:** MLflow (self-hosted) — every run logged from day one; also serves as the model registry for versioning fine-tuned and quantized checkpoints
 - **Quantization:** AWQ or GGUF — compare quality drop post-quantization
 - **Serving:** vLLM, OpenAI-compatible endpoint
-- **Agent framework:** Pydantic AI — typed, modern; raw tool-calling acceptable alternative
+- **Agent framework:** LangChain + LangGraph — explicit, stateful/branching agent workflows; widely adopted in industry
 - **Tool protocol:** MCP for at least one tool — shows currency with the ecosystem
 - **Validation:** Pydantic everywhere
 - **Observability:** Langfuse (self-hosted) — trace every agent run
@@ -196,7 +196,7 @@ Built **before** fine-tuning, and never modified after the first fine-tuning run
 
 **Phase 7: Agent skeleton**
 
-- Pydantic AI agent, frontier planner, tools: `ingest_document`, `extract_invoice`
+- LangGraph agent, frontier planner, tools: `ingest_document`, `extract_invoice`
 - Langfuse wired in from the first run
 - Deliverable: single-invoice happy path, fully traced
 

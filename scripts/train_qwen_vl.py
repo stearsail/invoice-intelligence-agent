@@ -96,3 +96,11 @@ print(f"Peak reserved memory = {used_memory} GB.")
 print(f"Peak reserved memory for training = {used_memory_for_lora} GB.")
 print(f"Peak reserved memory % of max memory = {used_percentage} %.")
 print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
+
+merged_dir = (
+    Path(__file__).parent.parent
+    / "models"
+    / f"qwen3-vl-cord-merged-r{hyperparams['r']}-epochs{hyperparams['epochs']}"
+)
+model.save_pretrained_merged(str(merged_dir), tokenizer)
+print(f"Saved merged model to {merged_dir}")
