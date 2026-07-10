@@ -1,12 +1,16 @@
-import base64
 from typing_extensions import Literal, TypedDict
 from langgraph.graph import StateGraph, START, END
 from invoice_agent.schema import Invoice
 from invoice_agent.reconciliation import reconcile
+from invoice_agent.images import load_image_b64
 from langchain_anthropic import ChatAnthropic
 from openai import OpenAI
 import os
 import getpass
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 
@@ -33,11 +37,6 @@ class Context(TypedDict):
     model_name: str = "qwen3-vl-cord-merged"
 
 
-def _load_image_b64(path: str) -> str:
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-
 # TODO: replace manual JSON parsing with vLLM's native structured-output /
 # guided decoding (constrains generation to match the schema directly),
 # once server-side config for it is set up. Would reduce the specialist's
@@ -45,7 +44,7 @@ def _load_image_b64(path: str) -> str:
 def extract_invoice(state: State) -> dict:
     print("Running invoice information extraction")
     img_path = state["image"]
-    img_b64 = _load_image_b64(img_path)
+    img_b64 = load_image_b64(img_path)
     response = client.chat.completions.create(
         model="qwen3-vl-cord-merged",
         messages=[
@@ -74,7 +73,7 @@ def extract_invoice(state: State) -> dict:
 
 def _call_frontier(state: State, extra_context: str = "") -> dict:
     img_path = state["image"]
-    img_b64 = _load_image_b64(img_path)
+    img_b64 = load_image_b64(img_path)
     message = {
         "role": "user",
         "content": [
@@ -152,9 +151,9 @@ builder.add_conditional_edges(
     },
 )
 builder.add_edge("frontier_review_fallback", "validate_reconcile")
+graph = builder.compile()
 
 if __name__ == "__main__":
-    graph = builder.compile()
     result = graph.invoke(
         {"image": "data/processed/CORD/images/test/99.png", "invoice": None}
     )
