@@ -1,5 +1,7 @@
 from typing_extensions import Literal, TypedDict
 from langgraph.graph import StateGraph, START, END
+from invoice_agent.db import engine
+from invoice_agent.db.operations import write_invoice
 from invoice_agent.schema import Invoice
 from invoice_agent.reconciliation import reconcile
 from invoice_agent.images import load_image_b64
@@ -93,8 +95,14 @@ def _call_frontier(state: State, extra_context: str = "") -> dict:
     }
 
     structured_model = model.with_structured_output(Invoice)
-    invoice = structured_model.invoke([message])
-    return {"invoice": invoice, "attempt": "frontier"}
+    try:
+        invoice = structured_model.invoke([message])
+        return {"invoice": invoice, "attempt": "frontier"}
+    except Exception as e:
+        return {
+            "parse_error": f"Frontier structured output error: {e}",
+            "attempt": "frontier",
+        }
 
 
 def frontier_extract_fallback(state: State) -> dict:
@@ -110,6 +118,12 @@ def frontier_review_fallback(state: State) -> dict:
 
 
 def validate_reconcile(state: State) -> dict:
+    if state["invoice"] is None:
+        return {
+            "reconciliation_issues": [
+                "extraction failed entirely — no invoice to reconcile"
+            ]
+        }
     issues = reconcile(state["invoice"])
     return {"reconciliation_issues": issues}
 
@@ -128,11 +142,21 @@ def route_after_reconcile(state: State) -> str:
     return "needs_review"
 
 
+def ledger_write(state: State) -> dict:
+    needs_review = bool(state["reconciliation_issues"])
+    review_reason = "; ".join(state["reconciliation_issues"]) if needs_review else None
+    write_invoice(
+        engine, state["invoice"], needs_review=needs_review, review_reason=review_reason
+    )
+    return {}
+
+
 builder = StateGraph(state_schema=State, context_schema=Context)
 builder.add_node("extract_invoice", extract_invoice)
 builder.add_node("frontier_extract_fallback", frontier_extract_fallback)
 builder.add_node("validate_reconcile", validate_reconcile)
 builder.add_node("frontier_review_fallback", frontier_review_fallback)
+builder.add_node("ledger_write", ledger_write)
 
 builder.add_edge(START, "extract_invoice")
 builder.add_conditional_edges(
@@ -146,11 +170,12 @@ builder.add_conditional_edges(
     route_after_reconcile,
     {
         "needs_review": "frontier_review_fallback",
-        "reconciled": END,
-        "needs_human_review": END,
+        "reconciled": "ledger_write",
+        "needs_human_review": "ledger_write",
     },
 )
 builder.add_edge("frontier_review_fallback", "validate_reconcile")
+builder.add_edge("ledger_write", END)
 graph = builder.compile()
 
 if __name__ == "__main__":
