@@ -1,5 +1,7 @@
 import os
-from sqlmodel import create_engine
+from sqlalchemy.ext.asyncio.engine import create_async_engine
+from sqlalchemy.ext.asyncio.session import async_sessionmaker
+from sqlmodel.ext.asyncio.session import AsyncSession
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -13,4 +15,7 @@ if not POSTGRES_PASSWORD:
 db_url = (
     f"postgresql+psycopg://postgres:{POSTGRES_PASSWORD}@localhost:5432/invoice_ledger"
 )
-engine = create_engine(db_url, echo=True)
+engine = create_async_engine(db_url, echo=True)
+session_factory = async_sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)

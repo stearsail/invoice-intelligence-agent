@@ -15,6 +15,7 @@ models/
 data/
 explore/
 CLAUDE.md
+invoice-agent-project-plan.md
 
 **/unsloth_compiled_cache
 mlflow.db

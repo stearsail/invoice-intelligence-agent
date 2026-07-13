@@ -14,3 +14,10 @@ class LedgerEntry(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     needs_review: bool = Field(default=False, index=True)
     review_reason: str | None = Field(default=None)
+
+
+class Job(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    status: str = Field(default="pending")
+    error: str | None = Field(default=None)
+    ledger_entry_id: int | None = Field(default=None, foreign_key="ledgerentry.id")

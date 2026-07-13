@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from invoice_agent.agent import graph
 
@@ -22,11 +23,11 @@ def tally_extractions(results: list) -> dict:
     print(counts)
 
 
-def run_agent_batch(img_dir: str) -> list:
+async def run_agent_batch(img_dir: str) -> list:
     img_paths = sorted(Path(img_dir).glob("*.png"))
     inputs = [{"image": str(p), "invoice": None} for p in img_paths]
 
-    results = graph.batch(inputs, return_exceptions=True)
+    results = await graph.abatch(inputs, return_exceptions=True)
     return results
 
 
@@ -39,5 +40,5 @@ if __name__ == "__main__":
     parser.add_argument("img_dir", type=str, help="Image directory to run agent on")
     args = parser.parse_args()
 
-    results = run_agent_batch(args.img_dir)
+    results = asyncio.run(run_agent_batch(args.img_dir))
     tally_extractions(results)

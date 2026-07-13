@@ -1,20 +1,22 @@
+import asyncio
+
 from typing_extensions import Literal, TypedDict
 from langgraph.graph import StateGraph, START, END
-from invoice_agent.db import engine
-from invoice_agent.db.operations import write_invoice
+from invoice_agent.db.operations import find_duplicate, write_invoice
 from invoice_agent.schema import Invoice
 from invoice_agent.reconciliation import reconcile
 from invoice_agent.images import load_image_b64
 from langchain_anthropic import ChatAnthropic
-from openai import OpenAI
+from openai import AsyncOpenAI
 import os
 import getpass
 from pathlib import Path
 from dotenv import load_dotenv
+from invoice_agent.db.engine import session_factory
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = AsyncOpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 
 if "ANTHROPIC_API_KEY" not in os.environ:
     os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API Key: ")
@@ -43,11 +45,11 @@ class Context(TypedDict):
 # guided decoding (constrains generation to match the schema directly),
 # once server-side config for it is set up. Would reduce the specialist's
 # malformed-output rate.
-def extract_invoice(state: State) -> dict:
+async def extract_invoice(state: State) -> dict:
     print("Running invoice information extraction")
     img_path = state["image"]
     img_b64 = load_image_b64(img_path)
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model="qwen3-vl-cord-merged",
         messages=[
             {
@@ -73,7 +75,7 @@ def extract_invoice(state: State) -> dict:
         return {"parse_error": f"Pydantic Validation error: {e}"}
 
 
-def _call_frontier(state: State, extra_context: str = "") -> dict:
+async def _call_frontier(state: State, extra_context: str = "") -> dict:
     img_path = state["image"]
     img_b64 = load_image_b64(img_path)
     message = {
@@ -96,7 +98,7 @@ def _call_frontier(state: State, extra_context: str = "") -> dict:
 
     structured_model = model.with_structured_output(Invoice)
     try:
-        invoice = structured_model.invoke([message])
+        invoice = await structured_model.ainvoke([message])
         return {"invoice": invoice, "attempt": "frontier"}
     except Exception as e:
         return {
@@ -105,19 +107,19 @@ def _call_frontier(state: State, extra_context: str = "") -> dict:
         }
 
 
-def frontier_extract_fallback(state: State) -> dict:
-    return _call_frontier(state)
+async def frontier_extract_fallback(state: State) -> dict:
+    return await _call_frontier(state)
 
 
-def frontier_review_fallback(state: State) -> dict:
+async def frontier_review_fallback(state: State) -> dict:
     context = (
         f"Validation and reconciliation issues exist in the previous extraction "
         f"— take these into consideration: {state['reconciliation_issues']}"
     )
-    return _call_frontier(state, extra_context=context)
+    return await _call_frontier(state, extra_context=context)
 
 
-def validate_reconcile(state: State) -> dict:
+async def validate_reconcile(state: State) -> dict:
     if state["invoice"] is None:
         return {
             "reconciliation_issues": [
@@ -125,6 +127,16 @@ def validate_reconcile(state: State) -> dict:
             ]
         }
     issues = reconcile(state["invoice"])
+
+    vendor_name = state["invoice"].vendor.name if state["invoice"].vendor else None
+    duplicate = await find_duplicate(
+        session_factory, state["invoice"].invoice_number, vendor_name
+    )
+    if duplicate is not None:
+        issues.append(
+            f"duplicate invoice_number '{state['invoice'].invoice_number}' "
+            f"already exists in ledger (entry id {duplicate.id})"
+        )
     return {"reconciliation_issues": issues}
 
 
@@ -142,11 +154,14 @@ def route_after_reconcile(state: State) -> str:
     return "needs_review"
 
 
-def ledger_write(state: State) -> dict:
+async def ledger_write(state: State) -> dict:
     needs_review = bool(state["reconciliation_issues"])
     review_reason = "; ".join(state["reconciliation_issues"]) if needs_review else None
-    write_invoice(
-        engine, state["invoice"], needs_review=needs_review, review_reason=review_reason
+    await write_invoice(
+        session_factory,
+        state["invoice"],
+        needs_review=needs_review,
+        review_reason=review_reason,
     )
     return {}
 
@@ -179,6 +194,8 @@ builder.add_edge("ledger_write", END)
 graph = builder.compile()
 
 if __name__ == "__main__":
-    result = graph.invoke(
-        {"image": "data/processed/CORD/images/test/99.png", "invoice": None}
+    result = asyncio.run(
+        graph.ainvoke(
+            {"image": "data/processed/CORD/images/test/99.png", "invoice": None}
+        )
     )
