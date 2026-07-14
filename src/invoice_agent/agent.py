@@ -16,7 +16,8 @@ from invoice_agent.db.engine import session_factory
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-client = AsyncOpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
+client = AsyncOpenAI(base_url=VLLM_BASE_URL, api_key="not-needed")
 
 if "ANTHROPIC_API_KEY" not in os.environ:
     os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API Key: ")
@@ -129,9 +130,10 @@ async def validate_reconcile(state: State) -> dict:
     issues = reconcile(state["invoice"])
 
     vendor_name = state["invoice"].vendor.name if state["invoice"].vendor else None
-    duplicate = await find_duplicate(
-        session_factory, state["invoice"].invoice_number, vendor_name
-    )
+    async with session_factory() as session:
+        duplicate = await find_duplicate(
+            session, state["invoice"].invoice_number, vendor_name
+        )
     if duplicate is not None:
         issues.append(
             f"duplicate invoice_number '{state['invoice'].invoice_number}' "
@@ -157,12 +159,13 @@ def route_after_reconcile(state: State) -> str:
 async def ledger_write(state: State) -> dict:
     needs_review = bool(state["reconciliation_issues"])
     review_reason = "; ".join(state["reconciliation_issues"]) if needs_review else None
-    await write_invoice(
-        session_factory,
-        state["invoice"],
-        needs_review=needs_review,
-        review_reason=review_reason,
-    )
+    async with session_factory() as session:
+        await write_invoice(
+            session,
+            state["invoice"],
+            needs_review=needs_review,
+            review_reason=review_reason,
+        )
     return {}
 
 

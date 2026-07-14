@@ -1,8 +1,16 @@
+import asyncio
+
 from sqlmodel import SQLModel
 
 from invoice_agent.db.engine import engine
-from invoice_agent.db.models import LedgerEntry  # noqa: F401 — import registers the table on SQLModel.metadata
+from invoice_agent.db.models import Job, LedgerEntry  # noqa: F401 — import registers the tables on SQLModel.metadata
+
+
+async def main() -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    print("Tables created (or already present).")
+
 
 if __name__ == "__main__":
-    SQLModel.metadata.create_all(engine)
-    print("Tables created (or already present).")
+    asyncio.run(main())

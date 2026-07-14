@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports: 
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=invoice_ledger
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  backend:
+    build: .
+    volumes:
+      - ./data/uploads:/app/data/uploads
+    ports:
+      - "8001:8001"
+    environment:
+      - POSTGRES_HOST=db
+      - VLLM_BASE_URL=http://vllm:8000/v1
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+  vllm:
+    image: vllm/vllm-openai:v0.19.1
+    volumes:
+      - ./models/qwen3-vl-cord-merged:/models/qwen3-vl-cord-merged
+    command:
+      - /models/qwen3-vl-cord-merged
+      - --served-model-name
+      - qwen3-vl-cord-merged
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --limit-mm-per-prompt
+      - '{"image":1,"video":0}'
+      - --max-model-len
+      - "4096"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports: 
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD","curl","-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  pgdata:

@@ -20,4 +20,5 @@ class Job(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     status: str = Field(default="pending")
     error: str | None = Field(default=None)
+    file_key: str
     ledger_entry_id: int | None = Field(default=None, foreign_key="ledgerentry.id")
