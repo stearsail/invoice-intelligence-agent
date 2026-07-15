@@ -2,7 +2,7 @@ import asyncio
 
 from typing_extensions import Literal, TypedDict
 from langgraph.graph import StateGraph, START, END
-from invoice_agent.db.operations import find_duplicate, write_invoice
+from invoice_agent.db.operations import find_duplicate, write_entry
 from invoice_agent.schema import Invoice
 from invoice_agent.reconciliation import reconcile
 from invoice_agent.images import load_image_b64
@@ -31,11 +31,13 @@ model = ChatAnthropic(
 
 
 class State(TypedDict):
+    job_id: int
     image: str
-    invoice: Invoice
+    invoice: Invoice | None
     parse_error: str | None
     reconciliation_issues: list[str]
     attempt: Literal["specialist", "frontier"]
+    ledger_entry_id: int
 
 
 class Context(TypedDict):
@@ -47,7 +49,6 @@ class Context(TypedDict):
 # once server-side config for it is set up. Would reduce the specialist's
 # malformed-output rate.
 async def extract_invoice(state: State) -> dict:
-    print("Running invoice information extraction")
     img_path = state["image"]
     img_b64 = load_image_b64(img_path)
     response = await client.chat.completions.create(
@@ -149,6 +150,8 @@ def route_after_parsing(state: State) -> str:
 
 
 def route_after_reconcile(state: State) -> str:
+    if state["invoice"] is None:
+        return "total_failure"
     if not state["reconciliation_issues"]:
         return "reconciled"
     elif state["attempt"] == "frontier":
@@ -160,13 +163,14 @@ async def ledger_write(state: State) -> dict:
     needs_review = bool(state["reconciliation_issues"])
     review_reason = "; ".join(state["reconciliation_issues"]) if needs_review else None
     async with session_factory() as session:
-        await write_invoice(
+        entry = await write_entry(
             session,
+            state["job_id"],
             state["invoice"],
             needs_review=needs_review,
             review_reason=review_reason,
         )
-    return {}
+    return {"ledger_entry_id": entry.id}
 
 
 builder = StateGraph(state_schema=State, context_schema=Context)
@@ -190,6 +194,7 @@ builder.add_conditional_edges(
         "needs_review": "frontier_review_fallback",
         "reconciled": "ledger_write",
         "needs_human_review": "ledger_write",
+        "total_failure": END,
     },
 )
 builder.add_edge("frontier_review_fallback", "validate_reconcile")

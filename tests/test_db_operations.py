@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from invoice_agent.db.operations import create_job, find_duplicate, write_invoice
+from invoice_agent.db.operations import create_job, find_duplicate, write_entry
 from invoice_agent.schema import Invoice, Party
 
 
@@ -40,7 +40,7 @@ def _invoice(**overrides) -> Invoice:
 
 @pytest.mark.anyio
 async def test_write_invoice_persists_and_assigns_id(session):
-    entry = await write_invoice(session, _invoice())
+    entry = await write_entry(session, _invoice())
 
     assert entry.id is not None
     assert entry.grand_total == Decimal("10.00")
@@ -51,14 +51,14 @@ async def test_write_invoice_persists_and_assigns_id(session):
 async def test_write_invoice_stores_vendor_name_when_present(session):
     invoice = _invoice(vendor=Party(name="Acme Supplies SRL"))
 
-    entry = await write_invoice(session, invoice)
+    entry = await write_entry(session, invoice)
 
     assert entry.vendor_name == "Acme Supplies SRL"
 
 
 @pytest.mark.anyio
 async def test_write_invoice_vendor_name_is_none_when_vendor_missing(session):
-    entry = await write_invoice(session, _invoice())
+    entry = await write_entry(session, _invoice())
 
     assert entry.vendor_name is None
 
@@ -67,7 +67,7 @@ async def test_write_invoice_vendor_name_is_none_when_vendor_missing(session):
 async def test_write_invoice_stores_full_invoice_as_json(session):
     invoice = _invoice(invoice_number="INV-001", issue_date=date(2026, 7, 1))
 
-    entry = await write_invoice(session, invoice)
+    entry = await write_entry(session, invoice)
     restored = Invoice.model_validate(entry.invoice_data)
 
     assert restored.invoice_number == "INV-001"
@@ -77,8 +77,8 @@ async def test_write_invoice_stores_full_invoice_as_json(session):
 
 @pytest.mark.anyio
 async def test_multiple_writes_get_distinct_ids(session):
-    entry_one = await write_invoice(session, _invoice(invoice_number="A"))
-    entry_two = await write_invoice(session, _invoice(invoice_number="B"))
+    entry_one = await write_entry(session, _invoice(invoice_number="A"))
+    entry_two = await write_entry(session, _invoice(invoice_number="B"))
 
     assert entry_one.id != entry_two.id
 
@@ -91,7 +91,7 @@ async def test_find_duplicate_returns_none_when_nothing_matches(session):
 @pytest.mark.anyio
 async def test_find_duplicate_finds_same_invoice_number_and_vendor(session):
     invoice = _invoice(invoice_number="INV-001", vendor=Party(name="Acme Supplies SRL"))
-    written = await write_invoice(session, invoice)
+    written = await write_entry(session, invoice)
 
     duplicate = await find_duplicate(session, "INV-001", "Acme Supplies SRL")
 
@@ -101,7 +101,7 @@ async def test_find_duplicate_finds_same_invoice_number_and_vendor(session):
 
 @pytest.mark.anyio
 async def test_find_duplicate_ignores_same_number_different_vendor(session):
-    await write_invoice(
+    await write_entry(
         session,
         _invoice(invoice_number="INV-001", vendor=Party(name="Acme Supplies SRL")),
     )
@@ -133,7 +133,7 @@ async def test_create_job_persists_and_assigns_id(session):
 
 @pytest.mark.anyio
 async def test_create_job_stores_ledger_entry_id_when_given(session):
-    entry = await write_invoice(session, _invoice())
+    entry = await write_entry(session, _invoice())
 
     job = await create_job(session, file_key="a1b2c3d4.png", ledger_entry_id=entry.id)
 

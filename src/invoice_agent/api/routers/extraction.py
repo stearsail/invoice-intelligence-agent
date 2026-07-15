@@ -1,11 +1,13 @@
 import uuid
 import aiofiles
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, BackgroundTasks
 from sqlmodel.ext.asyncio.session import AsyncSession
-from invoice_agent.api.schema.responses import FileUploadResponse
-from invoice_agent.db.engine import get_async_session
-from invoice_agent.db.operations import create_job
+from invoice_agent.api.schema.responses import JobCreationResponse
+from invoice_agent.db.engine import get_async_session, session_factory
+from invoice_agent.db.models import Job
+from invoice_agent.db.operations import create_job, update_job, query_job
+from invoice_agent.agent import graph
 
 
 router = APIRouter(prefix="/extraction", tags=["extraction"])
@@ -37,10 +39,50 @@ async def _save_upload(file: UploadFile, key: str) -> None:
             await out.write(chunk)
 
 
+async def _run_agent(job_id: int, job_file_key: str) -> None:
+    try:
+        result = await graph.ainvoke(
+            input={
+                "job_id": job_id,
+                "image": str(UPLOADS_DIR / job_file_key),
+                "invoice": None,
+            }
+        )
+    except Exception as e:
+        async with session_factory() as session:
+            await update_job(
+                session, job_id=job_id, status_update="error", error_update=str(e)
+            )
+        return
+    async with session_factory() as session:
+        if result["invoice"] is None:
+            await update_job(
+                session,
+                job_id=job_id,
+                status_update="needs_review",
+                error_update="; ".join(result["reconciliation_issues"]),
+            )
+        else:
+            await update_job(session, job_id=job_id, status_update="complete")
+
+
 @router.post("/upload_image")
-async def upload(file: UploadFile, session: AsyncSession = Depends(get_async_session)):
+async def upload(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_async_session),
+) -> JobCreationResponse:
     _check_file_type(file)
     key = _build_file_key(file)
     await _save_upload(file, key)
     job = await create_job(session, key)
-    return FileUploadResponse(job_id=job.id, status=job.status)
+    background_tasks.add_task(_run_agent, job.id, job.file_key)
+    return JobCreationResponse(job_id=job.id, status=job.status)
+
+
+@router.get("/status/{job_id}")
+async def get_extraction_job(
+    job_id: int, session: AsyncSession = Depends(get_async_session)
+):
+    job = await query_job(session, job_id)
+    return {"job": job}
