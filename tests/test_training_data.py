@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from invoice_agent.training_data import convert_to_conversation, load_jsonl_data
+from scripts.training_data import convert_to_conversation, load_jsonl_data
 
 
 def test_convert_to_conversation_builds_expected_structure(tmp_path: Path):

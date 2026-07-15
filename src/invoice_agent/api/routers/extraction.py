@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, BackgroundTas
 from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.api.schema.responses import JobCreationResponse
 from invoice_agent.db.engine import get_async_session, session_factory
-from invoice_agent.db.models import Job
 from invoice_agent.db.operations import create_job, update_job, query_job
 from invoice_agent.agent import graph
 
@@ -13,7 +12,7 @@ from invoice_agent.agent import graph
 router = APIRouter(prefix="/extraction", tags=["extraction"])
 
 
-_ALLOWED_TYPES = {"image/jpeg": "jpeg", "image/png": "png", "application/pdf": "pdf"}
+_ALLOWED_TYPES = {"image/jpeg": "jpeg", "image/png": "png"}
 # LOCAL STORAGE FOR PROJECT SCOPE, NO S3/R2
 UPLOADS_DIR = Path(__file__).parent.parent.parent.parent.parent / "data" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

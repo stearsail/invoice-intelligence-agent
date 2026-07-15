@@ -1,5 +1,5 @@
 from typing import Literal
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 

@@ -19,6 +19,7 @@ class LedgerEntry(SQLModel, table=True):
 
 class Job(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.now)
     status: str = Field(default="pending")
     error: str | None = Field(default=None)
     file_key: str

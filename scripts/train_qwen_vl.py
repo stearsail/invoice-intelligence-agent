@@ -5,7 +5,7 @@ from trl import SFTTrainer, SFTConfig
 import mlflow
 from pathlib import Path
 
-from invoice_agent.training_data import convert_to_conversation, load_jsonl_data
+from scripts.training_data import convert_to_conversation, load_jsonl_data
 
 data_dir = Path(__file__).parent.parent / "data" / "processed" / "CORD"
 output_dir = Path(__file__).parent.parent / "outputs"

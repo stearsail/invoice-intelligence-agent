@@ -23,8 +23,9 @@ class LedgerEntryResponse(BaseModel):
     review_reason: str | None
 
 
-class ReviewableResponse(BaseModel):
+class JobEntryPairResponse(BaseModel):
     job_id: int
+    created_at: datetime
     status: str
     error: str | None
     ledger_entry: LedgerEntryResponse | None

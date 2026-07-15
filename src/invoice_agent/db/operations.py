@@ -4,9 +4,7 @@ from invoice_agent.db.models import Job, LedgerEntry
 from invoice_agent.schema import Invoice
 
 
-async def create_job(
-    session: AsyncSession, file_key: str, ledger_entry_id: int | None = None
-) -> Job:
+async def create_job(session: AsyncSession, file_key: str) -> Job:
     job = Job(file_key=file_key)
     session.add(job)
     await session.commit()
@@ -59,13 +57,24 @@ async def query_reviewables(session: AsyncSession) -> list[(Job, LedgerEntry | N
     statement = (
         select(Job, LedgerEntry)
         .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True)
-        .where(or_(Job.status == "needs_review", LedgerEntry.needs_review == True))
+        .where(or_(Job.status == "needs_review", LedgerEntry.needs_review))
     )
     results = await session.exec(statement)
     reviewables = []
     for row in results:
         reviewables.append((row[0], row[1]))
     return reviewables
+
+
+async def query_full_ledger(session: AsyncSession) -> list[(Job, LedgerEntry | None)]:
+    statement = select(Job, LedgerEntry).join(
+        LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True
+    )
+    results = await session.exec(statement)
+    entries = []
+    for row in results:
+        entries.append((row[0], row[1]))
+    return entries
 
 
 async def find_duplicate(
