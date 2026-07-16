@@ -50,6 +50,12 @@ def _fake_frontier_model(
     return fake_model
 
 
+def _initial_state(**overrides):
+    state = {"job_id": 1, "image": "fake.png", "invoice": None}
+    state.update(overrides)
+    return state
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
@@ -69,9 +75,12 @@ def no_real_ledger(monkeypatch):
 
     written = []
 
-    async def _write(session_factory, invoice, needs_review=False, review_reason=None):
+    async def _write(
+        session_factory, job_id, invoice, needs_review=False, review_reason=None
+    ):
         written.append(
             {
+                "job_id": job_id,
                 "invoice": invoice,
                 "needs_review": needs_review,
                 "review_reason": review_reason,
@@ -79,7 +88,7 @@ def no_real_ledger(monkeypatch):
         )
         return MagicMock(id=1)
 
-    monkeypatch.setattr(agent, "write_invoice", _write)
+    monkeypatch.setattr(agent, "write_entry", _write)
     return written
 
 
@@ -92,12 +101,13 @@ async def test_specialist_success_reconciles_and_writes_ledger(
         agent, "client", _fake_specialist_client(invoice.model_dump_json())
     )
 
-    result = await agent.graph.ainvoke({"image": "fake.png", "invoice": None})
+    result = await agent.graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "specialist"
     assert result["reconciliation_issues"] == []
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is False
+    assert no_real_ledger[0]["job_id"] == 1
 
 
 @pytest.mark.anyio
@@ -108,7 +118,7 @@ async def test_specialist_parse_failure_falls_back_to_frontier_and_succeeds(
     monkeypatch.setattr(agent, "client", _fake_specialist_client("not valid json"))
     monkeypatch.setattr(agent, "model", _fake_frontier_model(invoice))
 
-    result = await agent.graph.ainvoke({"image": "fake.png", "invoice": None})
+    result = await agent.graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert result["reconciliation_issues"] == []
@@ -117,21 +127,20 @@ async def test_specialist_parse_failure_falls_back_to_frontier_and_succeeds(
 
 
 @pytest.mark.anyio
-async def test_both_specialist_and_frontier_extraction_fail_goes_to_human_review(
+async def test_both_specialist_and_frontier_extraction_fail_skips_ledger_write(
     monkeypatch, no_real_ledger
 ):
     monkeypatch.setattr(agent, "client", _fake_specialist_client("not valid json"))
     monkeypatch.setattr(agent, "model", _fake_frontier_model(raises=True))
 
-    result = await agent.graph.ainvoke({"image": "fake.png", "invoice": None})
+    result = await agent.graph.ainvoke(_initial_state())
 
     assert result["invoice"] is None
     assert result["reconciliation_issues"] == [
         "extraction failed entirely — no invoice to reconcile"
     ]
-    assert len(no_real_ledger) == 1
-    assert no_real_ledger[0]["needs_review"] is True
-    assert "extraction failed entirely" in no_real_ledger[0]["review_reason"]
+    # total failure routes straight to END — nothing to write, no ledger entry created
+    assert no_real_ledger == []
 
 
 @pytest.mark.anyio
@@ -145,7 +154,7 @@ async def test_specialist_reconciliation_failure_retries_via_frontier_and_resolv
     )
     monkeypatch.setattr(agent, "model", _fake_frontier_model(good_invoice))
 
-    result = await agent.graph.ainvoke({"image": "fake.png", "invoice": None})
+    result = await agent.graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert result["reconciliation_issues"] == []
@@ -163,7 +172,7 @@ async def test_reconciliation_failure_persists_after_frontier_retry_goes_to_huma
     )
     monkeypatch.setattr(agent, "model", _fake_frontier_model(bad_invoice))
 
-    result = await agent.graph.ainvoke({"image": "fake.png", "invoice": None})
+    result = await agent.graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert len(result["reconciliation_issues"]) == 1
@@ -185,10 +194,22 @@ async def test_duplicate_after_frontier_fallback_goes_to_human_review(
 
     monkeypatch.setattr(agent, "find_duplicate", _dup)
 
-    result = await agent.graph.ainvoke({"image": "fake.png", "invoice": None})
+    result = await agent.graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert any("duplicate" in issue for issue in result["reconciliation_issues"])
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is True
     assert "duplicate" in no_real_ledger[0]["review_reason"]
+
+
+@pytest.mark.anyio
+async def test_ledger_write_returns_entry_id_in_state(monkeypatch, no_real_ledger):
+    invoice = _invoice()
+    monkeypatch.setattr(
+        agent, "client", _fake_specialist_client(invoice.model_dump_json())
+    )
+
+    result = await agent.graph.ainvoke(_initial_state())
+
+    assert result["ledger_entry_id"] == 1

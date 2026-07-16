@@ -52,3 +52,6 @@ train = [
 
 [tool.fastapi]
 entrypoint = "invoice_agent.api.main:app"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
