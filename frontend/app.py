@@ -37,11 +37,10 @@ def render_entries(items, link_page, link_label):
             "created_at": st.column_config.DatetimeColumn(
                 "Created", format="D/M/YYYY h:mm A"
             ),
-            "link": st.column_config.LinkColumn(
-                "Details", display_text=link_label
-            ),
+            "link": st.column_config.LinkColumn("Details", display_text=link_label),
         },
     )
+
 
 with upload_tab:
     st.subheader("Upload an invoice or receipt")

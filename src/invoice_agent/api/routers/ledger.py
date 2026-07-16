@@ -28,7 +28,7 @@ def _to_response(job: Job, entry: LedgerEntry | None) -> JobEntryPairResponse:
             ledger_entry_error = str(e)
     return JobEntryPairResponse(
         job_id=job.id,
-        created_at = job.created_at,
+        created_at=job.created_at,
         status=job.status,
         error=job.error,
         ledger_entry=ledger_entry,
