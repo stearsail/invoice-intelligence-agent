@@ -15,8 +15,9 @@ if not POSTGRES_PASSWORD:
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST")
 if not POSTGRES_HOST:
     raise RuntimeError("POSTGRES_HOST is not set. Check .env file.")
+POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
 
-db_url = f"postgresql+psycopg://postgres:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:5432/invoice_ledger"
+db_url = f"postgresql+psycopg://postgres:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/invoice_ledger"
 engine = create_async_engine(db_url, echo=True)
 session_factory = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False

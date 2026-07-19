@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from invoice_agent.api.routers import extraction
 from invoice_agent.db.operations import create_job, query_job
+from invoice_agent.reconciliation import ReconciliationIssue
 
 
 @pytest.fixture
@@ -57,7 +58,10 @@ async def test_run_agent_marks_job_needs_review_when_no_invoice_extracted(
         return_value={
             "invoice": None,
             "reconciliation_issues": [
-                "extraction failed entirely — no invoice to reconcile"
+                ReconciliationIssue(
+                    category="unverifiable",
+                    message="Extraction failed entirely — no invoice to reconcile",
+                )
             ],
         }
     )
@@ -68,7 +72,7 @@ async def test_run_agent_marks_job_needs_review_when_no_invoice_extracted(
     async with in_memory_session_factory() as session:
         updated = await query_job(session, job.id)
     assert updated.status == "needs_review"
-    assert "extraction failed entirely" in updated.error
+    assert "Extraction failed entirely" in updated.error
 
 
 @pytest.mark.anyio

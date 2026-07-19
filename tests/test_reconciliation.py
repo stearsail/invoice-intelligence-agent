@@ -30,12 +30,18 @@ def test_reconciles_when_everything_matches():
 
 def test_missing_subtotal_is_unverifiable():
     invoice = _invoice(subtotal=None)
-    assert reconcile(invoice) == ["unverifiable: missing subtotal"]
+    issues = reconcile(invoice)
+    assert len(issues) == 1
+    assert issues[0].category == "unverifiable"
+    assert issues[0].message == "Missing subtotal"
 
 
 def test_no_line_items_is_unverifiable():
     invoice = _invoice(line_items=[])
-    assert reconcile(invoice) == ["unverifiable: no line items"]
+    issues = reconcile(invoice)
+    assert len(issues) == 1
+    assert issues[0].category == "unverifiable"
+    assert issues[0].message == "No line items"
 
 
 def test_missing_line_total_is_unverifiable_and_skips_math():
@@ -49,7 +55,32 @@ def test_missing_line_total_is_unverifiable_and_skips_math():
             ),
         ]
     )
-    assert reconcile(invoice) == ["unverifiable: missing line total for line 0"]
+    issues = reconcile(invoice)
+    assert len(issues) == 1
+    assert issues[0].category == "unverifiable"
+    assert issues[0].message == "Missing line total for line 1"
+
+
+def test_missing_line_total_index_is_one_based():
+    invoice = _invoice(
+        line_items=[
+            LineItem(
+                description="Item A",
+                quantity=Decimal("1"),
+                unit_price=Decimal("100"),
+                line_total=Decimal("100"),
+            ),
+            LineItem(
+                description="Item B",
+                quantity=Decimal("1"),
+                unit_price=Decimal("50"),
+                line_total=None,
+            ),
+        ]
+    )
+    issues = reconcile(invoice)
+    assert len(issues) == 1
+    assert issues[0].message == "Missing line total for line 2"
 
 
 def test_line_items_not_matching_subtotal_is_flagged():
@@ -65,16 +96,18 @@ def test_line_items_not_matching_subtotal_is_flagged():
     )
     issues = reconcile(invoice)
     assert len(issues) == 1
-    assert "line items sum to 50" in issues[0]
-    assert "subtotal is 100" in issues[0]
+    assert issues[0].category == "mismatch"
+    assert "Line items sum to 50" in issues[0].message
+    assert "Subtotal is 100" in issues[0].message
 
 
 def test_grand_total_not_matching_is_flagged():
     invoice = _invoice(grand_total=Decimal("500"))
     issues = reconcile(invoice)
     assert len(issues) == 1
-    assert "grand total computation is 110" in issues[0]
-    assert "grand total is 500" in issues[0]
+    assert issues[0].category == "mismatch"
+    assert "Grand total computation: 110" in issues[0].message
+    assert "not 500" in issues[0].message
 
 
 def test_small_rounding_difference_within_tolerance_passes():

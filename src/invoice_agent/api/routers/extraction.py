@@ -59,7 +59,9 @@ async def _run_agent(job_id: int, job_file_key: str) -> None:
                 session,
                 job_id=job_id,
                 status_update="needs_review",
-                error_update="; ".join(result["reconciliation_issues"]),
+                error_update="; ".join(
+                    issue.message for issue in result["reconciliation_issues"]
+                ),
             )
         else:
             await update_job(session, job_id=job_id, status_update="complete")

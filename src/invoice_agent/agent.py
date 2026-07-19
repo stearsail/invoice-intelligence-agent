@@ -4,7 +4,7 @@ from typing_extensions import Literal, TypedDict
 from langgraph.graph import StateGraph, START, END
 from invoice_agent.db.operations import find_duplicate, write_entry
 from invoice_agent.schema import Invoice
-from invoice_agent.reconciliation import reconcile
+from invoice_agent.reconciliation import ReconciliationIssue, reconcile
 from invoice_agent.images import load_image_b64
 from langchain_anthropic import ChatAnthropic
 from openai import AsyncOpenAI
@@ -35,7 +35,7 @@ class State(TypedDict):
     image: str
     invoice: Invoice | None
     parse_error: str | None
-    reconciliation_issues: list[str]
+    reconciliation_issues: list[ReconciliationIssue]
     attempt: Literal["specialist", "frontier"]
     ledger_entry_id: int
 
@@ -125,7 +125,10 @@ async def validate_reconcile(state: State) -> dict:
     if state["invoice"] is None:
         return {
             "reconciliation_issues": [
-                "extraction failed entirely — no invoice to reconcile"
+                ReconciliationIssue(
+                    category="unverifiable",
+                    message="Extraction failed entirely — no invoice to reconcile",
+                )
             ]
         }
     issues = reconcile(state["invoice"])
@@ -137,8 +140,10 @@ async def validate_reconcile(state: State) -> dict:
         )
     if duplicate is not None:
         issues.append(
-            f"duplicate invoice_number '{state['invoice'].invoice_number}' "
-            f"already exists in ledger (entry id {duplicate.id})"
+            ReconciliationIssue(
+                category="duplicate",
+                message=f"Duplicate invoice # — '{state['invoice'].invoice_number}' already exists in ledger (Entry ID {duplicate.id})",
+            )
         )
     return {"reconciliation_issues": issues}
 
@@ -161,7 +166,11 @@ def route_after_reconcile(state: State) -> str:
 
 async def ledger_write(state: State) -> dict:
     needs_review = bool(state["reconciliation_issues"])
-    review_reason = "; ".join(state["reconciliation_issues"]) if needs_review else None
+    review_reason = (
+        [issue.model_dump() for issue in state["reconciliation_issues"]]
+        if needs_review
+        else None
+    )
     async with session_factory() as session:
         entry = await write_entry(
             session,

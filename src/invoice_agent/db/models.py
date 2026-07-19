@@ -13,7 +13,7 @@ class LedgerEntry(SQLModel, table=True):
     invoice_data: dict = Field(sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
     needs_review: bool = Field(default=False, index=True)
-    review_reason: str | None = Field(default=None)
+    review_reason: list[dict] | None = Field(sa_column=Column(JSON))
     job_id: int = Field(foreign_key="job.id")
 
 

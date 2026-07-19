@@ -136,9 +136,12 @@ async def test_both_specialist_and_frontier_extraction_fail_skips_ledger_write(
     result = await agent.graph.ainvoke(_initial_state())
 
     assert result["invoice"] is None
-    assert result["reconciliation_issues"] == [
-        "extraction failed entirely — no invoice to reconcile"
-    ]
+    assert len(result["reconciliation_issues"]) == 1
+    assert result["reconciliation_issues"][0].category == "unverifiable"
+    assert (
+        result["reconciliation_issues"][0].message
+        == "Extraction failed entirely — no invoice to reconcile"
+    )
     # total failure routes straight to END — nothing to write, no ledger entry created
     assert no_real_ledger == []
 
@@ -178,7 +181,8 @@ async def test_reconciliation_failure_persists_after_frontier_retry_goes_to_huma
     assert len(result["reconciliation_issues"]) == 1
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is True
-    assert "grand total computation" in no_real_ledger[0]["review_reason"]
+    reasons = no_real_ledger[0]["review_reason"]
+    assert any("Grand total computation" in r["message"] for r in reasons)
 
 
 @pytest.mark.anyio
@@ -197,10 +201,13 @@ async def test_duplicate_after_frontier_fallback_goes_to_human_review(
     result = await agent.graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
-    assert any("duplicate" in issue for issue in result["reconciliation_issues"])
+    assert any(
+        issue.category == "duplicate" for issue in result["reconciliation_issues"]
+    )
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is True
-    assert "duplicate" in no_real_ledger[0]["review_reason"]
+    reasons = no_real_ledger[0]["review_reason"]
+    assert any(r["category"] == "duplicate" for r in reasons)
 
 
 @pytest.mark.anyio

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from invoice_agent.api.routers.extraction import router as extraction_router
 from invoice_agent.api.routers.ledger import router as ledger_router
 
@@ -7,6 +8,13 @@ from invoice_agent.api.routers.ledger import router as ledger_router
 
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/")

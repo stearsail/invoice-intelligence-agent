@@ -216,7 +216,11 @@ async def test_query_reviewables_includes_flagged_ledger_entries(session):
     job = await _job(session)
     await update_job(session, job_id=job.id, status_update="complete")
     await write_entry(
-        session, job.id, _invoice(), needs_review=True, review_reason="dup"
+        session,
+        job.id,
+        _invoice(),
+        needs_review=True,
+        review_reason=[{"category": "duplicate", "message": "dup"}],
     )
 
     reviewables = await query_reviewables(session)
@@ -224,7 +228,7 @@ async def test_query_reviewables_includes_flagged_ledger_entries(session):
     assert len(reviewables) == 1
     returned_job, returned_entry = reviewables[0]
     assert returned_job.id == job.id
-    assert returned_entry.review_reason == "dup"
+    assert returned_entry.review_reason == [{"category": "duplicate", "message": "dup"}]
 
 
 @pytest.mark.anyio

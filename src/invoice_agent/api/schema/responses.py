@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 from invoice_agent.schema import Invoice
+from invoice_agent.reconciliation import ReconciliationIssue
 
 
 class JobCreationResponse(BaseModel):
@@ -20,7 +21,7 @@ class LedgerEntryResponse(BaseModel):
     invoice_data: Invoice
     created_at: datetime
     needs_review: bool
-    review_reason: str | None
+    review_reason: list[ReconciliationIssue] | None
 
 
 class JobEntryPairResponse(BaseModel):

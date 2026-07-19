@@ -53,13 +53,18 @@ def test_to_response_with_no_entry():
 
 def test_to_response_with_valid_entry():
     job = _job()
-    entry = _entry(needs_review=True, review_reason="unverifiable: missing subtotal")
+    entry = _entry(
+        needs_review=True,
+        review_reason=[{"category": "unverifiable", "message": "Missing subtotal"}],
+    )
 
     response = _to_response(job, entry)
 
     assert response.ledger_entry is not None
     assert response.ledger_entry.needs_review is True
-    assert response.ledger_entry.review_reason == "unverifiable: missing subtotal"
+    assert len(response.ledger_entry.review_reason) == 1
+    assert response.ledger_entry.review_reason[0].category == "unverifiable"
+    assert response.ledger_entry.review_reason[0].message == "Missing subtotal"
     assert response.ledger_entry.invoice_data.document_type == "receipt"
     assert response.ledger_entry_error is None
 
