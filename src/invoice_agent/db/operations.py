@@ -35,7 +35,7 @@ async def write_entry(
     job_id: int,
     invoice: Invoice,
     needs_review: bool = False,
-    review_reason: str | None = None,
+    review_reason: list[dict] | None = None,
 ) -> LedgerEntry:
     entry = LedgerEntry(
         invoice_number=invoice.invoice_number,
@@ -53,11 +53,26 @@ async def write_entry(
     return entry
 
 
+async def query_job_entry(
+    session: AsyncSession, job_id: int
+) -> tuple[Job, LedgerEntry | None] | None:
+    statement = (
+        select(Job, LedgerEntry)
+        .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True)
+        .where(Job.id == job_id)
+    )
+    results = await session.exec(statement)
+    row = results.first()
+    if row is None:
+        return None
+    return (row[0], row[1])
+
+
 async def query_reviewables(session: AsyncSession) -> list[(Job, LedgerEntry | None)]:
     statement = (
         select(Job, LedgerEntry)
         .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True)
-        .where(or_(Job.status == "needs_review", LedgerEntry.needs_review))
+        .where(or_(Job.status.in_(["needs_review", "error"]), LedgerEntry.needs_review))
     )
     results = await session.exec(statement)
     reviewables = []
@@ -66,15 +81,26 @@ async def query_reviewables(session: AsyncSession) -> list[(Job, LedgerEntry | N
     return reviewables
 
 
-async def query_full_ledger(session: AsyncSession) -> list[(Job, LedgerEntry | None)]:
-    statement = select(Job, LedgerEntry).join(
-        LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True
+async def query_resolved_ledger(
+    session: AsyncSession,
+) -> list[(Job, LedgerEntry | None)]:
+    statement = (
+        select(Job, LedgerEntry)
+        .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=False)
+        .where(Job.status == "complete", LedgerEntry.needs_review == False)  # noqa: E712
+        # RUFF SUGGESTS "not LedgerEntry.needs_review — won't work since truthiness of a column object is always truthy"
     )
     results = await session.exec(statement)
     entries = []
     for row in results:
         entries.append((row[0], row[1]))
     return entries
+
+
+async def query_pending_jobs(session: AsyncSession) -> list[Job]:
+    statement = select(Job).where(Job.status == "pending")
+    results = await session.exec(statement)
+    return results
 
 
 async def find_duplicate(

@@ -26,10 +26,22 @@ services:
       - VLLM_BASE_URL=http://vllm:8000/v1
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     depends_on:
       db:
         condition: service_healthy
       vllm:
+        condition: service_healthy
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
         condition: service_healthy
   vllm:
     image: vllm/vllm-openai:v0.19.1

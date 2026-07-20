@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getFullLedger } from '../lib/api'
+import { getResolvedLedger } from '../lib/api'
 import JobTable from '../components/JobTable'
 
 export default function FullLedgerPage() {
@@ -8,7 +8,7 @@ export default function FullLedgerPage() {
 
   async function load() {
     try {
-      setItems(await getFullLedger())
+      setItems(await getResolvedLedger())
     } catch (err) {
       setError(err.message)
     }

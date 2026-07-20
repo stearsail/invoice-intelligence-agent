@@ -24,6 +24,11 @@ class LedgerEntryResponse(BaseModel):
     review_reason: list[ReconciliationIssue] | None
 
 
+class PendingJobResponse(BaseModel):
+    job_id: int
+    created_at: datetime
+
+
 class JobEntryPairResponse(BaseModel):
     job_id: int
     created_at: datetime

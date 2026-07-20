@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.db.operations import (
     create_job,
     find_duplicate,
-    query_full_ledger,
+    query_resolved_ledger,
     query_job,
     query_reviewables,
     update_job,
@@ -247,17 +247,21 @@ async def test_query_reviewables_includes_needs_review_jobs_with_no_entry(sessio
 
 
 @pytest.mark.anyio
-async def test_query_reviewables_excludes_errored_jobs(session):
+async def test_query_reviewables_includes_errored_jobs(session):
     job = await _job(session)
     await update_job(session, job_id=job.id, status_update="error", error_update="boom")
 
     reviewables = await query_reviewables(session)
 
-    assert reviewables == []
+    assert len(reviewables) == 1
+    returned_job, returned_entry = reviewables[0]
+    assert returned_job.id == job.id
+    assert returned_job.status == "error"
+    assert returned_entry is None
 
 
 @pytest.mark.anyio
-async def test_query_full_ledger_includes_everything(session):
+async def test_query_resolved_ledger_excludes_pending_and_errored_jobs(session):
     clean_job = await _job(session, "clean.png")
     await update_job(session, job_id=clean_job.id, status_update="complete")
     await write_entry(session, clean_job.id, _invoice(), needs_review=False)
@@ -267,8 +271,11 @@ async def test_query_full_ledger_includes_everything(session):
         session, job_id=failed_job.id, status_update="error", error_update="boom"
     )
 
-    all_entries = await query_full_ledger(session)
+    await _job(session, "pending.png")
 
-    assert len(all_entries) == 2
-    returned_job_ids = {job.id for job, _ in all_entries}
-    assert returned_job_ids == {clean_job.id, failed_job.id}
+    resolved = await query_resolved_ledger(session)
+
+    assert len(resolved) == 1
+    returned_job, returned_entry = resolved[0]
+    assert returned_job.id == clean_job.id
+    assert returned_entry.needs_review is False

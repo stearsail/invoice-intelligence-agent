@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getFullLedger } from '../lib/api'
+import { getJobDetail } from '../lib/api'
 
 function displayValue(value) {
   if (value === null || value === undefined || value === '') return '—'
@@ -29,11 +29,13 @@ export default function JobDetailPage() {
   useEffect(() => {
     async function load() {
       try {
-        const items = await getFullLedger()
-        const match = items.find((i) => String(i.job_id) === jobId)
-        setItem(match || false)
+        setItem(await getJobDetail(jobId))
       } catch (err) {
-        setError(err.message)
+        if (err.status === 404) {
+          setItem(false)
+        } else {
+          setError(err.message)
+        }
       }
     }
     load()
@@ -44,9 +46,7 @@ export default function JobDetailPage() {
   if (item === false) {
     return (
       <div className="p-10">
-        <p className="text-sm text-amber-700">
-          This job isn't in the ledger (it may still be pending).
-        </p>
+        <p className="text-sm text-amber-700">This job doesn't exist.</p>
         <Link
           to="/ledger"
           className="mt-4 inline-block rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"

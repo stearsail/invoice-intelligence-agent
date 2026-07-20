@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadImage, getFullLedger } from '../lib/api'
+import { uploadImage, getPendingJobs } from '../lib/api'
 import { formatDateTime } from '../lib/format'
 
 export default function UploadPage() {
@@ -10,8 +10,7 @@ export default function UploadPage() {
 
   async function loadPendingJobs() {
     try {
-      const items = await getFullLedger()
-      setPendingJobs(items.filter((item) => item.status === 'pending'))
+      setPendingJobs(await getPendingJobs())
     } catch (err) {
       setError(err.message)
     }

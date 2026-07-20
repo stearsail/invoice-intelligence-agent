@@ -4,7 +4,9 @@ async function request(path, options) {
   const response = await fetch(`${API_BASE}${path}`, options)
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(`${response.status}: ${text}`)
+    const error = new Error(`${response.status}: ${text}`)
+    error.status = response.status
+    throw error
   }
   return response.json()
 }
@@ -23,6 +25,14 @@ export function getReviewQueue() {
   return request('/ledger/review')
 }
 
-export function getFullLedger() {
-  return request('/ledger/full')
+export function getResolvedLedger() {
+  return request('/ledger/resolved')
+}
+
+export function getPendingJobs() {
+  return request('/ledger/pending')
+}
+
+export function getJobDetail(jobId) {
+  return request(`/ledger/${jobId}`)
 }
