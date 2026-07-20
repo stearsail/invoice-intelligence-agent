@@ -40,12 +40,12 @@ def _entry(**overrides) -> LedgerEntry:
 
 
 def test_to_response_with_no_entry():
-    job = _job(status="needs_review", error="extraction failed entirely")
+    job = _job(status="extraction_failed", error="extraction failed entirely")
 
     response = _to_response(job, None)
 
     assert response.job_id == 1
-    assert response.status == "needs_review"
+    assert response.status == "extraction_failed"
     assert response.error == "extraction failed entirely"
     assert response.ledger_entry is None
     assert response.ledger_entry_error is None

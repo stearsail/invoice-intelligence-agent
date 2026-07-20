@@ -232,10 +232,13 @@ async def test_query_reviewables_includes_flagged_ledger_entries(session):
 
 
 @pytest.mark.anyio
-async def test_query_reviewables_includes_needs_review_jobs_with_no_entry(session):
+async def test_query_reviewables_includes_extraction_failed_jobs_with_no_entry(session):
     job = await _job(session)
     await update_job(
-        session, job_id=job.id, status_update="needs_review", error_update="no invoice"
+        session,
+        job_id=job.id,
+        status_update="extraction_failed",
+        error_update="no invoice",
     )
 
     reviewables = await query_reviewables(session)

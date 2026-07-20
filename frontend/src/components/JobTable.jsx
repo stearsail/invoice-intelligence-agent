@@ -4,15 +4,22 @@ import { formatDateTime } from '../lib/format'
 const STATUS_STYLES = {
   pending: 'bg-gray-100 text-gray-700',
   complete: 'bg-green-100 text-green-700',
-  needs_review: 'bg-amber-100 text-amber-700',
+  extraction_failed: 'bg-amber-100 text-amber-700',
   error: 'bg-red-100 text-red-700',
+}
+
+function humanizeStatus(status) {
+  return status
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }
 
 function StatusBadge({ status }) {
   const style = STATUS_STYLES[status] || 'bg-gray-100 text-gray-700'
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${style}`}>
-      {status}
+      {humanizeStatus(status)}
     </span>
   )
 }

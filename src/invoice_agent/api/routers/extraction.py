@@ -2,6 +2,7 @@ import uuid
 import aiofiles
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.api.schema.responses import JobCreationResponse
 from invoice_agent.db.engine import get_async_session, session_factory
@@ -58,7 +59,7 @@ async def _run_agent(job_id: int, job_file_key: str) -> None:
             await update_job(
                 session,
                 job_id=job_id,
-                status_update="needs_review",
+                status_update="extraction_failed",
                 error_update="; ".join(
                     issue.message for issue in result["reconciliation_issues"]
                 ),
@@ -87,3 +88,17 @@ async def get_extraction_job(
 ):
     job = await query_job(session, job_id)
     return {"job": job}
+
+
+@router.get("/image/{job_id}")
+async def get_job_image(
+    job_id: int, session: AsyncSession = Depends(get_async_session)
+) -> FileResponse:
+    job = await query_job(session, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    key = job.file_key
+    file_path = UPLOADS_DIR / key
+    if not Path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Image does not exist")
+    return FileResponse(file_path)

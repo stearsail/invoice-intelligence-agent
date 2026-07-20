@@ -49,7 +49,7 @@ async def test_run_agent_marks_job_complete_on_success(
 
 
 @pytest.mark.anyio
-async def test_run_agent_marks_job_needs_review_when_no_invoice_extracted(
+async def test_run_agent_marks_job_extraction_failed_when_no_invoice_extracted(
     in_memory_session_factory, monkeypatch
 ):
     job = await _make_job(in_memory_session_factory)
@@ -71,7 +71,7 @@ async def test_run_agent_marks_job_needs_review_when_no_invoice_extracted(
 
     async with in_memory_session_factory() as session:
         updated = await query_job(session, job.id)
-    assert updated.status == "needs_review"
+    assert updated.status == "extraction_failed"
     assert "Extraction failed entirely" in updated.error
 
 

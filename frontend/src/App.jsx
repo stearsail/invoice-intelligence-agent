@@ -3,6 +3,7 @@ import UploadPage from './pages/UploadPage'
 import ReviewQueuePage from './pages/ReviewQueuePage'
 import FullLedgerPage from './pages/FullLedgerPage'
 import JobDetailPage from './pages/JobDetailPage'
+import JobEditPage from './pages/JobEditPage'
 
 const navLinkClass = ({ isActive }) =>
   `px-3 py-2 text-sm font-medium rounded ${
@@ -21,7 +22,7 @@ function Nav() {
           Review Queue
         </NavLink>
         <NavLink to="/ledger" className={navLinkClass}>
-          Full Ledger
+          Ledger
         </NavLink>
       </div>
     </nav>
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/review" element={<ReviewQueuePage />} />
         <Route path="/ledger" element={<FullLedgerPage />} />
         <Route path="/job/:jobId" element={<JobDetailPage />} />
+        <Route path="/job/:jobId/edit" element={<JobEditPage />} />
       </Routes>
     </BrowserRouter>
   )

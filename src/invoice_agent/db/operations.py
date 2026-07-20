@@ -53,6 +53,25 @@ async def write_entry(
     return entry
 
 
+async def update_entry(
+    session: AsyncSession, job_id: int, invoice: Invoice
+) -> LedgerEntry:
+    statement = select(LedgerEntry).where(LedgerEntry.job_id == job_id)
+    result = await session.exec(statement)
+    entry = result.first()
+    entry.invoice_number = invoice.invoice_number
+    entry.vendor_name = invoice.vendor.name if invoice.vendor else None
+    entry.issue_date = invoice.issue_date
+    entry.currency = invoice.currency
+    entry.grand_total = invoice.grand_total
+    entry.invoice_data = invoice.model_dump(mode="json")
+    entry.needs_review = False
+    entry.review_reason = None
+    session.add(entry)
+    await session.commit()
+    return entry
+
+
 async def query_job_entry(
     session: AsyncSession, job_id: int
 ) -> tuple[Job, LedgerEntry | None] | None:
@@ -72,7 +91,11 @@ async def query_reviewables(session: AsyncSession) -> list[(Job, LedgerEntry | N
     statement = (
         select(Job, LedgerEntry)
         .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True)
-        .where(or_(Job.status.in_(["needs_review", "error"]), LedgerEntry.needs_review))
+        .where(
+            or_(
+                Job.status.in_(["extraction_failed", "error"]), LedgerEntry.needs_review
+            )
+        )
     )
     results = await session.exec(statement)
     reviewables = []
@@ -88,7 +111,7 @@ async def query_resolved_ledger(
         select(Job, LedgerEntry)
         .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=False)
         .where(Job.status == "complete", LedgerEntry.needs_review == False)  # noqa: E712
-        # RUFF SUGGESTS "not LedgerEntry.needs_review — won't work since truthiness of a column object is always truthy"
+        # RUFF SUGGESTS "not LedgerEntry.needs_review — this won't work since truthiness of a column object is always truthy"
     )
     results = await session.exec(statement)
     entries = []

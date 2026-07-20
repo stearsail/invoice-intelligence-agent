@@ -14,7 +14,11 @@ from invoice_agent.db.operations import (
     query_pending_jobs,
     query_resolved_ledger,
     query_reviewables,
+    update_entry,
+    update_job,
+    write_entry,
 )
+from invoice_agent.schema import Invoice
 
 
 logger = logging.getLogger(__name__)
@@ -92,4 +96,23 @@ async def get_job_by_id(
             detail=f"Job {job_id} not found",
         )
     job, entry = result
+    return _to_response(job, entry)
+
+
+@router.put("/{job_id}/edit", response_model=JobEntryPairResponse)
+async def edit_job(
+    job_id: int, invoice: Invoice, session: AsyncSession = Depends(get_async_session)
+) -> JobEntryPairResponse:
+    job, entry = await query_job_entry(session, job_id)
+    if entry is None:
+        entry = await write_entry(
+            session=session,
+            job_id=job_id,
+            invoice=invoice,
+            needs_review=False,
+            review_reason=None,
+        )
+        job = await update_job(session=session, job_id=job_id, status_update="complete")
+    else:
+        entry = await update_entry(session=session, job_id=job_id, invoice=invoice)
     return _to_response(job, entry)

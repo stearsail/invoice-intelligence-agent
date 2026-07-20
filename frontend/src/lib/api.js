@@ -36,3 +36,15 @@ export function getPendingJobs() {
 export function getJobDetail(jobId) {
   return request(`/ledger/${jobId}`)
 }
+
+export function submitJobEdit(jobId, invoice) {
+  return request(`/ledger/${jobId}/edit`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(invoice),
+  })
+}
+
+export function getJobImageUrl(jobId) {
+  return `${API_BASE}/extraction/image/${jobId}`
+}

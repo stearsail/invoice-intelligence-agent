@@ -1,38 +1,48 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { getJobDetail } from '../lib/api'
+import { getJobDetail, getJobImageUrl } from '../lib/api'
+import { CATEGORY_STYLES, toFormInvoice } from '../lib/invoiceForm'
+
+const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
 
 function displayValue(value) {
   if (value === null || value === undefined || value === '') return '—'
-  if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : '—'
   return String(value)
 }
 
-function humanizeKey(key) {
-  return key
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
+function ReadOnlyField({ label, value }) {
+  return (
+    <div>
+      <label className={labelClass}>{label}</label>
+      <p className="text-sm">{displayValue(value)}</p>
+    </div>
+  )
 }
 
-const CATEGORY_STYLES = {
-  unverifiable: 'text-amber-700',
-  mismatch: 'text-red-700',
-  duplicate: 'text-purple-700',
+const DOCUMENT_TYPE_LABELS = {
+  invoice: 'Invoice',
+  receipt: 'Receipt',
+  credit_note: 'Credit Note',
 }
 
 export default function JobDetailPage() {
   const { jobId } = useParams()
-  const [item, setItem] = useState(null)
+  const [form, setForm] = useState(null)
   const [error, setError] = useState(null)
+  const [reviewInfo, setReviewInfo] = useState(null)
 
   useEffect(() => {
     async function load() {
       try {
-        setItem(await getJobDetail(jobId))
+        const item = await getJobDetail(jobId)
+        setForm(toFormInvoice(item.ledger_entry?.invoice_data))
+        setReviewInfo({
+          jobError: item.error,
+          reviewReason: item.ledger_entry?.review_reason ?? [],
+        })
       } catch (err) {
         if (err.status === 404) {
-          setItem(false)
+          setForm(false)
         } else {
           setError(err.message)
         }
@@ -42,8 +52,8 @@ export default function JobDetailPage() {
   }, [jobId])
 
   if (error) return <p className="p-10 text-sm text-red-600">{error}</p>
-  if (item === null) return <p className="p-10 text-sm text-gray-500">Loading…</p>
-  if (item === false) {
+  if (form === null) return <p className="p-10 text-sm text-gray-500">Loading…</p>
+  if (form === false) {
     return (
       <div className="p-10">
         <p className="text-sm text-amber-700">This job doesn't exist.</p>
@@ -51,123 +61,140 @@ export default function JobDetailPage() {
           to="/ledger"
           className="mt-4 inline-block rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
         >
-          &larr; Back to Full Ledger
+          &larr; Back to Ledger
         </Link>
       </div>
     )
   }
 
-  const entry = item.ledger_entry
-
   return (
-    <div className="mx-auto w-full px-[5%] py-10">
-      <Link
-        to="/ledger"
-        className="inline-block rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-      >
-        &larr; Back to Full Ledger
-      </Link>
-      <h1 className="mt-6 mb-6 text-2xl font-semibold">Job {item.job_id}</h1>
-
-      <p className="text-sm">
-        <span className="font-medium">Status:</span> {item.status}
-      </p>
-      {item.error && (
-        <p className="mt-1 text-sm text-red-600">
-          <span className="font-medium">Error:</span> {item.error}
-        </p>
-      )}
-      {item.ledger_entry_error && (
-        <p className="mt-1 text-sm text-red-600">
-          <span className="font-medium">Ledger decode error:</span>{' '}
-          {item.ledger_entry_error}
-        </p>
-      )}
-
-      {!entry && (
-        <p className="mt-4 text-sm text-gray-500">
-          No ledger entry — nothing was extracted for this job.
-        </p>
-      )}
-
-      {entry && (
-        <>
-          <p className="mt-4 flex items-center gap-2 text-sm">
-            <span className="font-medium">Needs review:</span>
-            {entry.needs_review ? (
-              <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                Yes
-              </span>
-            ) : (
-              <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                No
-              </span>
-            )}
-          </p>
-          {entry.review_reason && entry.review_reason.length > 0 && (
-            <div className="mt-2 text-sm">
-              <span className="font-medium">Review reasons:</span>
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                {entry.review_reason.map((issue, idx) => (
-                  <li
-                    key={idx}
-                    className={CATEGORY_STYLES[issue.category] || 'text-gray-700'}
-                  >
-                    <span className="text-xs font-medium uppercase opacity-70">
-                      {issue.category}
-                    </span>{' '}
-                    — {issue.message}
-                  </li>
-                ))}
-              </ul>
+    <div className="mx-auto w-full px-[1%]">
+      <div className="grid grid-cols-2 gap-4 bg-gray-100 p-2">
+        <div className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-2">
+          <div>
+            {reviewInfo &&
+              (reviewInfo.jobError || reviewInfo.reviewReason.length > 0) && (
+                <div className="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-2">
+                  <h2 className="text-sm font-semibold text-amber-900">Issues:</h2>
+                  {reviewInfo.jobError && (
+                    <p className="text-sm text-red-700">{reviewInfo.jobError}</p>
+                  )}
+                  {reviewInfo.reviewReason.length > 0 && (
+                    <ul className="list-disc space-y-1 pl-5 text-sm">
+                      {reviewInfo.reviewReason.map((issue, idx) => (
+                        <li
+                          key={idx}
+                          className={CATEGORY_STYLES[issue.category] || 'text-gray-700'}
+                        >
+                          <span className="text-xs font-medium uppercase opacity-70">
+                            {issue.category}
+                          </span>{' '}
+                          — {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+          </div>
+          <div className="grid grid-cols-2 gap-5">
+            <div>
+              <label className={labelClass}>Document type</label>
+              <p className="text-sm">
+                {DOCUMENT_TYPE_LABELS[form.document_type] || form.document_type}
+              </p>
             </div>
-          )}
+            <ReadOnlyField label="Number" value={form.invoice_number} />
+          </div>
+          <div className="grid grid-cols-2 gap-5">
+            <ReadOnlyField label="Issue date" value={form.issue_date} />
+            <ReadOnlyField label="Due date" value={form.due_date} />
+          </div>
 
-          <h2 className="mt-8 mb-2 text-lg font-semibold">Fields</h2>
-          <table className="w-full border-collapse text-left text-sm">
-            <tbody>
-              {Object.entries(entry.invoice_data)
-                .filter(([key]) => key !== 'line_items')
-                .map(([key, value]) => (
-                  <tr key={key} className="border-b border-gray-100">
-                    <td className="w-48 py-1.5 pr-4 font-medium text-gray-600">
-                      {humanizeKey(key)}
-                    </td>
-                    <td className="py-1.5">{displayValue(value)}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+          <div className="grid grid-cols-2 gap-5">
+            <div>
+              <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
+              <div className="space-y-2">
+                <ReadOnlyField label="Name" value={form.vendor.name} />
+                <ReadOnlyField label="Address" value={form.vendor.address} />
+                <ReadOnlyField label="Tax ID" value={form.vendor.tax_id} />
+                <ReadOnlyField label="IBAN" value={form.vendor.iban} />
+              </div>
+            </div>
+            <div>
+              <h2 className="mb-2 text-sm font-semibold">Customer</h2>
+              <div className="space-y-2">
+                <ReadOnlyField label="Name" value={form.customer.name} />
+                <ReadOnlyField label="Address" value={form.customer.address} />
+                <ReadOnlyField label="Tax ID" value={form.customer.tax_id} />
+              </div>
+            </div>
+          </div>
 
-          <h2 className="mt-8 mb-2 text-lg font-semibold">Line items</h2>
-          {entry.invoice_data.line_items && entry.invoice_data.line_items.length > 0 ? (
+          <div>
+            <h2 className="mb-2 text-sm font-semibold">Line items</h2>
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="py-2 pr-4 font-medium text-gray-600">#</th>
-                  <th className="py-2 pr-4 font-medium text-gray-600">Description</th>
-                  <th className="py-2 pr-4 font-medium text-gray-600">Unit price</th>
-                  <th className="py-2 pr-4 font-medium text-gray-600">Quantity</th>
-                  <th className="py-2 font-medium text-gray-600">Line total</th>
+                  <th className="py-1 pr-2 font-medium text-gray-600">#</th>
+                  <th className="py-1 pr-2 font-medium text-gray-600">Description</th>
+                  <th className="py-1 pr-2 font-medium text-gray-600">Unit price</th>
+                  <th className="py-1 pr-2 font-medium text-gray-600">Quantity</th>
+                  <th className="py-1 pr-2 font-medium text-gray-600">Line total</th>
                 </tr>
               </thead>
               <tbody>
-                {entry.invoice_data.line_items.map((line, idx) => (
+                {form.line_items.map((line, idx) => (
                   <tr key={idx} className="border-b border-gray-100">
-                    <td className="py-1.5 pr-4 text-gray-500">{idx + 1}</td>
-                    <td className="py-1.5 pr-4">{displayValue(line.description)}</td>
-                    <td className="py-1.5 pr-4">{displayValue(line.unit_price)}</td>
-                    <td className="py-1.5 pr-4">{displayValue(line.quantity)}</td>
-                    <td className="py-1.5">{displayValue(line.line_total)}</td>
+                    <td className="py-1 pr-2 text-gray-500">{idx + 1}</td>
+                    <td className="py-1 pr-2">{displayValue(line.description)}</td>
+                    <td className="py-1 pr-2">{displayValue(line.unit_price)}</td>
+                    <td className="py-1 pr-2">{displayValue(line.quantity)}</td>
+                    <td className="py-1 pr-2">{displayValue(line.line_total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : (
-            <p className="text-sm text-gray-500">No line items.</p>
-          )}
-        </>
-      )}
+          </div>
+
+          <div className="grid grid-cols-5 gap-4">
+            <ReadOnlyField label="Currency" value={form.currency} />
+            <ReadOnlyField label="Subtotal" value={form.subtotal} />
+            <ReadOnlyField label="Tax" value={form.tax} />
+            <ReadOnlyField label="Service charge" value={form.service_charge} />
+            <ReadOnlyField label="Discount" value={form.discount} />
+          </div>
+
+          <div className="w-48">
+            <ReadOnlyField label="Grand total" value={form.grand_total} />
+          </div>
+
+          <div className="mt-5 flex items-center gap-3">
+            <Link
+              to={`/job/${jobId}/edit`}
+              className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Edit
+            </Link>
+            <Link
+              to="/ledger"
+              className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            >
+              Back
+            </Link>
+          </div>
+        </div>
+
+        <div className="flex justify-center">
+          <a href={getJobImageUrl(jobId)} target="_blank" rel="noreferrer">
+            <img
+              src={getJobImageUrl(jobId)}
+              alt={`Document for job ${jobId}`}
+              className="rounded border border-gray-200"
+            />
+          </a>
+        </div>
+      </div>
     </div>
   )
 }
