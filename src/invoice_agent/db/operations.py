@@ -87,6 +87,27 @@ async def query_job_entry(
     return (row[0], row[1])
 
 
+async def delete_job_entry(
+    session: AsyncSession, job_id: int
+) -> tuple[Job, LedgerEntry | None] | None:
+    statement = (
+        select(Job, LedgerEntry)
+        .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True)
+        .where(Job.id == job_id)
+    )
+    result = await session.exec(statement)
+    row = result.first()
+    if row is None:
+        return None
+    job, entry = row
+    if entry is not None:
+        await session.delete(entry)
+        await session.flush()
+    await session.delete(job)
+    await session.commit()
+    return (job, entry)
+
+
 async def query_reviewables(session: AsyncSession) -> list[(Job, LedgerEntry | None)]:
     statement = (
         select(Job, LedgerEntry)

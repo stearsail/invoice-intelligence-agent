@@ -5,7 +5,6 @@ import base64
 
 def load_image_b64(path: str, resize: bool = True, max_pixels: int = 1_000_000) -> str:
     img = Image.open(path)
-
     if resize:
         w, h = img.size
         if w * h > max_pixels:

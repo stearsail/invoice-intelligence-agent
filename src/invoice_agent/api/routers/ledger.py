@@ -10,6 +10,7 @@ from invoice_agent.api.schema.responses import (
 from invoice_agent.db.engine import get_async_session
 from invoice_agent.db.models import Job, LedgerEntry
 from invoice_agent.db.operations import (
+    delete_job_entry,
     query_job_entry,
     query_pending_jobs,
     query_resolved_ledger,
@@ -95,6 +96,18 @@ async def get_job_by_id(
             status_code=404,
             detail=f"Job {job_id} not found",
         )
+    job, entry = result
+    return _to_response(job, entry)
+
+
+@router.delete("/{job_id}", response_model=JobEntryPairResponse)
+async def delete_job_by_id(
+    job_id: int,
+    session: AsyncSession = Depends(get_async_session),
+) -> JobEntryPairResponse:
+    result = await delete_job_entry(session, job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
     job, entry = result
     return _to_response(job, entry)
 

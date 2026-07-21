@@ -111,7 +111,7 @@ export default function JobDetailPage() {
             <ReadOnlyField label="Due date" value={form.due_date} />
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-gray-300 pt-3 pb-3">
             <div>
               <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
               <div className="space-y-2">
@@ -131,7 +131,7 @@ export default function JobDetailPage() {
             </div>
           </div>
 
-          <div>
+          <div className="border-t border-gray-300 pt-3 pb-3">
             <h2 className="mb-2 text-sm font-semibold">Line items</h2>
             <table className="w-full border-collapse text-left text-sm">
               <thead>
@@ -157,7 +157,7 @@ export default function JobDetailPage() {
             </table>
           </div>
 
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-5 gap-4 border-t border-gray-300 pt-3">
             <ReadOnlyField label="Currency" value={form.currency} />
             <ReadOnlyField label="Subtotal" value={form.subtotal} />
             <ReadOnlyField label="Tax" value={form.tax} />
@@ -169,7 +169,7 @@ export default function JobDetailPage() {
             <ReadOnlyField label="Grand total" value={form.grand_total} />
           </div>
 
-          <div className="mt-5 flex items-center gap-3">
+          <div className="flex items-center gap-3 mt-5">
             <Link
               to={`/job/${jobId}/edit`}
               className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"

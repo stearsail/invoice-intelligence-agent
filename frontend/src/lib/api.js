@@ -48,3 +48,7 @@ export function submitJobEdit(jobId, invoice) {
 export function getJobImageUrl(jobId) {
   return `${API_BASE}/extraction/image/${jobId}`
 }
+
+export function deleteJob(jobId) {
+  return request(`/ledger/${jobId}`, { method: 'DELETE' })
+}

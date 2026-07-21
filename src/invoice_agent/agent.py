@@ -16,8 +16,9 @@ from invoice_agent.db.engine import session_factory
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1")
-client = AsyncOpenAI(base_url=VLLM_BASE_URL, api_key="not-needed")
+VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL")
+VLLM_API_KEY = os.environ.get("VLLM_API_KEY")
+client = AsyncOpenAI(base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY)
 
 if "ANTHROPIC_API_KEY" not in os.environ:
     os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter your Anthropic API Key: ")
@@ -50,7 +51,7 @@ class Context(TypedDict):
 # malformed-output rate.
 async def extract_invoice(state: State) -> dict:
     img_path = state["image"]
-    img_b64 = load_image_b64(img_path)
+    img_b64 = await asyncio.to_thread(load_image_b64, img_path)
     response = await client.chat.completions.create(
         model="qwen3-vl-cord-merged",
         messages=[
@@ -79,7 +80,7 @@ async def extract_invoice(state: State) -> dict:
 
 async def _call_frontier(state: State, extra_context: str = "") -> dict:
     img_path = state["image"]
-    img_b64 = load_image_b64(img_path)
+    img_b64 = await asyncio.to_thread(load_image_b64, img_path)
     message = {
         "role": "user",
         "content": [

@@ -10,6 +10,16 @@ export const BLANK_LINE_ITEM = {
   unit_price: '',
   quantity: '',
   line_total: '',
+  marked: false,
+}
+
+export function lineItemHasData(line) {
+  return (
+    line.description.trim() !== '' ||
+    String(line.unit_price).trim() !== '' ||
+    String(line.quantity).trim() !== '' ||
+    String(line.line_total).trim() !== ''
+  )
 }
 
 export const BLANK_INVOICE = {

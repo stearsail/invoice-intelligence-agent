@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { getJobDetail, submitJobEdit, getJobImageUrl } from '../lib/api'
-import { CATEGORY_STYLES, toFormInvoice, BLANK_LINE_ITEM } from '../lib/invoiceForm'
+import { getJobDetail, submitJobEdit, deleteJob, getJobImageUrl } from '../lib/api'
+import {
+  CATEGORY_STYLES,
+  toFormInvoice,
+  BLANK_LINE_ITEM,
+  lineItemHasData,
+} from '../lib/invoiceForm'
 
 function blankToNull(value) {
   return value === '' ? null : value
@@ -34,7 +39,7 @@ function toPayload(form) {
     due_date: blankToNull(form.due_date),
     currency: form.currency.toUpperCase(),
     line_items: form.line_items
-      .filter((line) => line.description.trim() !== '')
+      .filter((line) => line.description.trim() !== '' && !line.marked)
       .map((line) => ({
         description: blankToNull(line.description),
         unit_price: blankToNull(line.unit_price),
@@ -69,6 +74,7 @@ export default function JobEditPage() {
   const [form, setForm] = useState(null)
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [reviewInfo, setReviewInfo] = useState(null)
 
   useEffect(() => {
@@ -111,6 +117,15 @@ export default function JobEditPage() {
     }))
   }
 
+  function toggleLineItemMarked(index) {
+    setForm((prev) => ({
+      ...prev,
+      line_items: prev.line_items.map((line, i) =>
+        i === index ? { ...line, marked: !line.marked } : line
+      ),
+    }))
+  }
+
   function addLineItem() {
     setForm((prev) => ({
       ...prev,
@@ -135,6 +150,19 @@ export default function JobEditPage() {
     } catch (err) {
       setError(err.message)
       setSubmitting(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete job ${jobId}? This cannot be undone.`)) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteJob(jobId)
+      navigate('/review')
+    } catch (err) {
+      setError(err.message)
+      setDeleting(false)
     }
   }
 
@@ -224,7 +252,7 @@ export default function JobEditPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-gray-300 pt-3 pb-3">
             <div>
               <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
               <div className="space-y-2">
@@ -271,8 +299,7 @@ export default function JobEditPage() {
               </div>
             </div>
           </div>
-
-          <div>
+          <div className="border-t border-gray-300 pt-3 pb-3">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Line items</h2>
               <button
@@ -285,7 +312,7 @@ export default function JobEditPage() {
             </div>
             <table className="w-full border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-200">
+                <tr>
                   <th className="py-1 pr-2 font-medium text-gray-600">#</th>
                   <th className="py-1 pr-2 font-medium text-gray-600">Description</th>
                   <th className="py-1 pr-2 font-medium text-gray-600">Unit price</th>
@@ -296,44 +323,62 @@ export default function JobEditPage() {
               </thead>
               <tbody>
                 {form.line_items.map((line, idx) => (
-                  <tr key={idx} className="border-b border-gray-100">
+                  <tr
+                    key={idx}
+                    className={`border-b border-gray-100 ${line.marked ? 'opacity-40' : ''}`}
+                  >
                     <td className="py-1 pr-2 text-gray-500">{idx + 1}</td>
-                    <td className="py-1 pr-2">
+                    <td className={`py-1 pr-2 ${line.marked ? 'line-through' : ''}`}>
                       <input
                         className={inputClass}
                         value={line.description}
+                        disabled={line.marked}
                         onChange={(e) => updateLineItem(idx, 'description', e.target.value)}
                       />
                     </td>
-                    <td className="py-1 pr-2">
+                    <td className={`py-1 pr-2 ${line.marked ? 'line-through' : ''}`}>
                       <input
                         className={inputClass}
                         value={line.unit_price}
+                        disabled={line.marked}
                         onChange={(e) => updateLineItem(idx, 'unit_price', e.target.value)}
                       />
                     </td>
-                    <td className="py-1 pr-2">
+                    <td className={`py-1 pr-2 ${line.marked ? 'line-through' : ''}`}>
                       <input
                         className={inputClass}
                         value={line.quantity}
+                        disabled={line.marked}
                         onChange={(e) => updateLineItem(idx, 'quantity', e.target.value)}
                       />
                     </td>
-                    <td className="py-1 pr-2">
+                    <td className={`py-1 pr-2 ${line.marked ? 'line-through' : ''}`}>
                       <input
                         className={inputClass}
                         value={line.line_total}
+                        disabled={line.marked}
                         onChange={(e) => updateLineItem(idx, 'line_total', e.target.value)}
                       />
                     </td>
-                    <td className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => removeLineItem(idx)}
-                        className="cursor-pointer text-xs text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
+                    <td className="py-1 text-center">
+                      {lineItemHasData(line) ? (
+                        <label className="flex cursor-pointer items-center gap-1 text-xs text-red-600">
+                          <input
+                            type="checkbox"
+                            checked={line.marked}
+                            onChange={() => toggleLineItemMarked(idx)}
+                          />
+                          {line.marked ? 'Marked' : 'Remove'}
+                        </label>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => removeLineItem(idx)}
+                          className="cursor-pointer text-xs text-red-600 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -341,7 +386,7 @@ export default function JobEditPage() {
             </table>
           </div>
 
-          <div className="grid grid-cols-5 gap-4">
+          <div className="grid grid-cols-5 gap-4 border-t border-gray-300 pt-3">
             <Field
               label="Currency"
               value={form.currency}
@@ -395,9 +440,16 @@ export default function JobEditPage() {
             >
               Cancel
             </button>
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={handleDelete}
+              className="ml-auto cursor-pointer rounded bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
           </div>
         </form>
-
         <div className="flex justify-center">
           <a href={getJobImageUrl(jobId)} target="_blank" rel="noreferrer">
             <img
