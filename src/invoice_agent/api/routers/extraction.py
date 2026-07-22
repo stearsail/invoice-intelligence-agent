@@ -1,3 +1,4 @@
+from invoice_agent.services.extraction_job import run_extraction_job
 import uuid
 import aiofiles
 from pathlib import Path
@@ -5,18 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, BackgroundTas
 from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.api.schema.responses import JobCreationResponse
-from invoice_agent.db.engine import get_async_session, session_factory
-from invoice_agent.db.operations import create_job, update_job, query_job
-from invoice_agent.agent import graph
+from invoice_agent.db.engine import get_async_session
+from invoice_agent.db.operations import create_job, query_job
+from invoice_agent.config import UPLOADS_DIR
 
 
 router = APIRouter(prefix="/extraction", tags=["extraction"])
 
-
 _ALLOWED_TYPES = {"image/jpeg": "jpeg", "image/png": "png"}
-# LOCAL STORAGE FOR PROJECT SCOPE, NO S3/R2
-UPLOADS_DIR = Path(__file__).parent.parent.parent.parent.parent / "data" / "uploads"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _check_file_type(file: UploadFile) -> None:
@@ -39,35 +36,6 @@ async def _save_upload(file: UploadFile, key: str) -> None:
             await out.write(chunk)
 
 
-async def _run_agent(job_id: int, job_file_key: str) -> None:
-    try:
-        result = await graph.ainvoke(
-            input={
-                "job_id": job_id,
-                "image": str(UPLOADS_DIR / job_file_key),
-                "invoice": None,
-            }
-        )
-    except Exception as e:
-        async with session_factory() as session:
-            await update_job(
-                session, job_id=job_id, status_update="error", error_update=str(e)
-            )
-        return
-    async with session_factory() as session:
-        if result["invoice"] is None:
-            await update_job(
-                session,
-                job_id=job_id,
-                status_update="extraction_failed",
-                error_update="; ".join(
-                    issue.message for issue in result["reconciliation_issues"]
-                ),
-            )
-        else:
-            await update_job(session, job_id=job_id, status_update="complete")
-
-
 @router.post("/upload_image")
 async def upload(
     file: UploadFile,
@@ -78,7 +46,7 @@ async def upload(
     key = _build_file_key(file)
     await _save_upload(file, key)
     job = await create_job(session, key)
-    background_tasks.add_task(_run_agent, job.id, job.file_key)
+    background_tasks.add_task(run_extraction_job, job.id, job.file_key)
     return JobCreationResponse(job_id=job.id, status=job.status)
 
 

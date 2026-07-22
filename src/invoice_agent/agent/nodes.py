@@ -1,0 +1,97 @@
+from invoice_agent.agent.extractors import FrontierExtractor, SpecialistExtractor
+from invoice_agent.agent.state import State
+from invoice_agent.db.operations import find_duplicate, write_entry
+from invoice_agent.reconciliation import ReconciliationIssue, reconcile
+from invoice_agent.db.engine import session_factory
+
+
+async def specialist_extract(specialist: SpecialistExtractor, state: State) -> dict:
+    result = await specialist.extract_invoice(state["image"])
+    return {
+        "invoice": result.invoice,
+        "parse_error": result.parse_error,
+        "attempt": "specialist",
+    }
+
+
+async def frontier_extract(
+    frontier: FrontierExtractor, state: State, extra_context: str | None = None
+) -> dict:
+    result = await frontier.extract_invoice(state["image"], extra_context)
+    return {
+        "invoice": result.invoice,
+        "parse_error": result.parse_error,
+        "attempt": "frontier",
+    }
+
+
+async def validate_reconcile(state: State) -> dict:
+    if state["invoice"] is None:
+        return {
+            "reconciliation_issues": [
+                ReconciliationIssue(
+                    category="unverifiable",
+                    message="Extraction failed entirely — no invoice to reconcile",
+                )
+            ]
+        }
+    issues = reconcile(state["invoice"])
+    vendor_name = state["invoice"].vendor.name if state["invoice"].vendor else None
+    async with session_factory() as session:
+        duplicate = await find_duplicate(
+            session, state["invoice"].invoice_number, vendor_name
+        )
+    if duplicate is not None:
+        issues.append(
+            ReconciliationIssue(
+                category="duplicate",
+                message=f"Duplicate invoice # — '{state['invoice'].invoice_number}' already exists in ledger (Entry ID {duplicate.id})",
+            )
+        )
+    return {"reconciliation_issues": issues}
+
+
+async def frontier_review_fallback(frontier: FrontierExtractor, state: State) -> dict:
+    context = (
+        f"Validation and reconciliation issues exist in the previous extraction "
+        f"— take these into consideration: {state['reconciliation_issues']}"
+    )
+    result = await frontier.extract_invoice(state["image"], context)
+    update = {"parse_error": result.parse_error, "attempt": "frontier"}
+    if result.invoice is not None:
+        update["invoice"] = result.invoice
+    return update
+
+
+def route_after_parsing(state: State) -> str:
+    if state["parse_error"] is None:
+        return "success"
+    return "needs_fallback"
+
+
+def route_after_reconcile(state: State) -> str:
+    if state["invoice"] is None:
+        return "total_failure"
+    if not state["reconciliation_issues"]:
+        return "reconciled"
+    elif state["attempt"] == "frontier":
+        return "needs_human_review"
+    return "needs_review"
+
+
+async def ledger_write(state: State) -> dict:
+    needs_review = bool(state["reconciliation_issues"])
+    review_reason = (
+        [issue.model_dump() for issue in state["reconciliation_issues"]]
+        if needs_review
+        else None
+    )
+    async with session_factory() as session:
+        entry = await write_entry(
+            session,
+            state["job_id"],
+            state["invoice"],
+            needs_review=needs_review,
+            review_reason=review_reason,
+        )
+    return {"ledger_entry_id": entry.id}

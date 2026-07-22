@@ -1,10 +1,8 @@
 import base64
 import io
 from pathlib import Path
-
 from PIL import Image
-
-from invoice_agent.images import load_image_b64
+from invoice_agent.agent.images import load_image_b64
 
 
 def test_small_image_is_returned_unmodified(tmp_path: Path):
