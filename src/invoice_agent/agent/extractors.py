@@ -19,6 +19,20 @@ class SpecialistExtractor:
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self._model_name = model_name
 
+    # TODO: replace manual JSON parsing with vLLM guided decoding
+    # (extra_body={"guided_json": ...}), which constrains generation to the
+    # schema during decoding instead of validating after the fact.
+    #
+    # Invoice.model_json_schema() can't be passed directly: Pydantic renders
+    # Decimal fields with a negative-lookahead pattern, which grammar backends
+    # compile to automata and can't express. Needs a separate wire schema with
+    # money as plain strings (parsed via the CORD price parser, which keeps
+    # locale info that a JSON number would destroy — "45.000" is 45000 IDR).
+    # Enums and simple regex (^[A-Z]{3}$, ISO dates) do compile and are worth
+    # keeping; "format": "date" is not enforced, so parsing stays.
+    #
+    # Measure the malformed-output rate first — the specialist is fine-tuned on
+    # this format, so the gain may not justify the second schema.
     async def extract_invoice(self, img_path: str) -> ExtractionResult:
         img_b64 = await asyncio.to_thread(load_image_b64, img_path)
         response = await self._client.chat.completions.create(
