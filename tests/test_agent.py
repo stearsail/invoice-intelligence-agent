@@ -1,9 +1,11 @@
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from invoice_agent import agent
+from invoice_agent.agent import nodes
+from invoice_agent.agent.extractors import ExtractionResult
+from invoice_agent.agent.graph import build_graph
 from invoice_agent.schema import Invoice, LineItem
 
 
@@ -27,27 +29,37 @@ def _invoice(**overrides) -> Invoice:
     return Invoice(**defaults)
 
 
-def _fake_specialist_client(content: str) -> MagicMock:
-    message = MagicMock(content=content)
-    choice = MagicMock(message=message)
-    fake_client = MagicMock()
-    fake_client.chat.completions.create = AsyncMock(
-        return_value=MagicMock(choices=[choice])
-    )
-    return fake_client
+class _FakeExtractor:
+    """Stands in for a real extractor at the graph boundary.
+
+    Returns a canned ExtractionResult and records how it was called, so tests
+    can assert on the context fed back during the review retry.
+    """
+
+    def __init__(self, result: ExtractionResult | None = None):
+        self.result = result
+        self.calls = []
+
+    async def extract_invoice(
+        self, img_path: str, extra_context: str | None = None
+    ) -> ExtractionResult:
+        self.calls.append({"img_path": img_path, "extra_context": extra_context})
+        return self.result
 
 
-def _fake_frontier_model(
-    invoice: Invoice | None = None, raises: bool = False
-) -> MagicMock:
-    structured = MagicMock()
-    if raises:
-        structured.ainvoke = AsyncMock(side_effect=RuntimeError("frontier boom"))
-    else:
-        structured.ainvoke = AsyncMock(return_value=invoice)
-    fake_model = MagicMock()
-    fake_model.with_structured_output.return_value = structured
-    return fake_model
+def _extracted(invoice: Invoice) -> ExtractionResult:
+    return ExtractionResult(invoice=invoice, parse_error=None)
+
+
+def _failed(parse_error: str) -> ExtractionResult:
+    return ExtractionResult(invoice=None, parse_error=parse_error)
+
+
+def _build(specialist_result=None, frontier_result=None):
+    """Compile a graph wired to fake extractors."""
+    specialist = _FakeExtractor(specialist_result)
+    frontier = _FakeExtractor(frontier_result)
+    return build_graph(specialist=specialist, frontier=frontier), specialist, frontier
 
 
 def _initial_state(**overrides):
@@ -62,22 +74,15 @@ def anyio_backend():
 
 
 @pytest.fixture(autouse=True)
-def no_real_image_io(monkeypatch):
-    monkeypatch.setattr(agent, "load_image_b64", lambda path: "fakeb64")
-
-
-@pytest.fixture(autouse=True)
 def no_real_ledger(monkeypatch):
-    async def _find_duplicate(session_factory, invoice_number, vendor_name):
+    async def _find_duplicate(session, invoice_number, vendor_name):
         return None
 
-    monkeypatch.setattr(agent, "find_duplicate", _find_duplicate)
+    monkeypatch.setattr(nodes, "find_duplicate", _find_duplicate)
 
     written = []
 
-    async def _write(
-        session_factory, job_id, invoice, needs_review=False, review_reason=None
-    ):
+    async def _write(session, job_id, invoice, needs_review=False, review_reason=None):
         written.append(
             {
                 "job_id": job_id,
@@ -88,20 +93,15 @@ def no_real_ledger(monkeypatch):
         )
         return MagicMock(id=1)
 
-    monkeypatch.setattr(agent, "write_entry", _write)
+    monkeypatch.setattr(nodes, "write_entry", _write)
     return written
 
 
 @pytest.mark.anyio
-async def test_specialist_success_reconciles_and_writes_ledger(
-    monkeypatch, no_real_ledger
-):
-    invoice = _invoice()
-    monkeypatch.setattr(
-        agent, "client", _fake_specialist_client(invoice.model_dump_json())
-    )
+async def test_specialist_success_reconciles_and_writes_ledger(no_real_ledger):
+    graph, _, _ = _build(specialist_result=_extracted(_invoice()))
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "specialist"
     assert result["reconciliation_issues"] == []
@@ -112,28 +112,32 @@ async def test_specialist_success_reconciles_and_writes_ledger(
 
 @pytest.mark.anyio
 async def test_specialist_parse_failure_falls_back_to_frontier_and_succeeds(
-    monkeypatch, no_real_ledger
+    no_real_ledger,
 ):
-    invoice = _invoice()
-    monkeypatch.setattr(agent, "client", _fake_specialist_client("not valid json"))
-    monkeypatch.setattr(agent, "model", _fake_frontier_model(invoice))
+    graph, _, frontier = _build(
+        specialist_result=_failed("Pydantic Validation error: not valid json"),
+        frontier_result=_extracted(_invoice()),
+    )
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert result["reconciliation_issues"] == []
+    assert len(frontier.calls) == 1
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is False
 
 
 @pytest.mark.anyio
 async def test_both_specialist_and_frontier_extraction_fail_skips_ledger_write(
-    monkeypatch, no_real_ledger
+    no_real_ledger,
 ):
-    monkeypatch.setattr(agent, "client", _fake_specialist_client("not valid json"))
-    monkeypatch.setattr(agent, "model", _fake_frontier_model(raises=True))
+    graph, _, _ = _build(
+        specialist_result=_failed("Pydantic Validation error: not valid json"),
+        frontier_result=_failed("Frontier structured output error: frontier boom"),
+    )
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["invoice"] is None
     assert len(result["reconciliation_issues"]) == 1
@@ -148,16 +152,14 @@ async def test_both_specialist_and_frontier_extraction_fail_skips_ledger_write(
 
 @pytest.mark.anyio
 async def test_specialist_reconciliation_failure_retries_via_frontier_and_resolves(
-    monkeypatch, no_real_ledger
+    no_real_ledger,
 ):
-    bad_invoice = _invoice(grand_total=Decimal("500"))
-    good_invoice = _invoice()
-    monkeypatch.setattr(
-        agent, "client", _fake_specialist_client(bad_invoice.model_dump_json())
+    graph, _, _ = _build(
+        specialist_result=_extracted(_invoice(grand_total=Decimal("500"))),
+        frontier_result=_extracted(_invoice()),
     )
-    monkeypatch.setattr(agent, "model", _fake_frontier_model(good_invoice))
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert result["reconciliation_issues"] == []
@@ -167,15 +169,15 @@ async def test_specialist_reconciliation_failure_retries_via_frontier_and_resolv
 
 @pytest.mark.anyio
 async def test_reconciliation_failure_persists_after_frontier_retry_goes_to_human_review(
-    monkeypatch, no_real_ledger
+    no_real_ledger,
 ):
     bad_invoice = _invoice(grand_total=Decimal("500"))
-    monkeypatch.setattr(
-        agent, "client", _fake_specialist_client(bad_invoice.model_dump_json())
+    graph, _, _ = _build(
+        specialist_result=_extracted(bad_invoice),
+        frontier_result=_extracted(bad_invoice),
     )
-    monkeypatch.setattr(agent, "model", _fake_frontier_model(bad_invoice))
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert len(result["reconciliation_issues"]) == 1
@@ -189,16 +191,17 @@ async def test_reconciliation_failure_persists_after_frontier_retry_goes_to_huma
 async def test_duplicate_after_frontier_fallback_goes_to_human_review(
     monkeypatch, no_real_ledger
 ):
-    invoice = _invoice()
-    monkeypatch.setattr(agent, "client", _fake_specialist_client("not valid json"))
-    monkeypatch.setattr(agent, "model", _fake_frontier_model(invoice))
+    graph, _, _ = _build(
+        specialist_result=_failed("Pydantic Validation error: not valid json"),
+        frontier_result=_extracted(_invoice()),
+    )
 
-    async def _dup(session_factory, invoice_number, vendor_name):
+    async def _dup(session, invoice_number, vendor_name):
         return MagicMock(id=42)
 
-    monkeypatch.setattr(agent, "find_duplicate", _dup)
+    monkeypatch.setattr(nodes, "find_duplicate", _dup)
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["attempt"] == "frontier"
     assert any(
@@ -211,12 +214,51 @@ async def test_duplicate_after_frontier_fallback_goes_to_human_review(
 
 
 @pytest.mark.anyio
-async def test_ledger_write_returns_entry_id_in_state(monkeypatch, no_real_ledger):
-    invoice = _invoice()
-    monkeypatch.setattr(
-        agent, "client", _fake_specialist_client(invoice.model_dump_json())
-    )
+async def test_ledger_write_returns_entry_id_in_state(no_real_ledger):
+    graph, _, _ = _build(specialist_result=_extracted(_invoice()))
 
-    result = await agent.graph.ainvoke(_initial_state())
+    result = await graph.ainvoke(_initial_state())
 
     assert result["ledger_entry_id"] == 1
+
+
+@pytest.mark.anyio
+async def test_review_retry_feeds_reconciliation_issues_back_to_frontier(
+    no_real_ledger,
+):
+    graph, _, frontier = _build(
+        specialist_result=_extracted(_invoice(grand_total=Decimal("500"))),
+        frontier_result=_extracted(_invoice()),
+    )
+
+    await graph.ainvoke(_initial_state())
+
+    assert len(frontier.calls) == 1
+    extra_context = frontier.calls[0]["extra_context"]
+    assert extra_context is not None
+    assert "Grand total computation" in extra_context
+
+
+@pytest.mark.anyio
+async def test_failed_review_retry_keeps_earlier_invoice_for_human_review(
+    no_real_ledger,
+):
+    """A failed review retry must not discard the extraction it was retrying.
+
+    The node only overwrites `invoice` when the retry produced one, so the
+    entry still reaches the ledger flagged for review instead of routing to
+    total_failure and being dropped.
+    """
+    bad_invoice = _invoice(grand_total=Decimal("500"))
+    graph, _, _ = _build(
+        specialist_result=_extracted(bad_invoice),
+        frontier_result=_failed("Frontier structured output error: frontier boom"),
+    )
+
+    result = await graph.ainvoke(_initial_state())
+
+    assert result["invoice"] is bad_invoice
+    assert result["attempt"] == "frontier"
+    assert len(no_real_ledger) == 1
+    assert no_real_ledger[0]["needs_review"] is True
+    assert no_real_ledger[0]["invoice"] is bad_invoice
