@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from invoice_agent.logging_config import setup_logging
 from invoice_agent.api.routers.extraction import router as extraction_router
 from invoice_agent.api.routers.ledger import router as ledger_router
+
+setup_logging()
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):

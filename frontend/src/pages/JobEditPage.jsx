@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { getJobDetail, submitJobEdit, deleteJob, getJobImageUrl } from '../lib/api'
+import {
+  getJobDetail,
+  getReviewQueue,
+  submitJobEdit,
+  deleteJob,
+  getJobImageUrl,
+} from '../lib/api'
 import {
   CATEGORY_STYLES,
   toFormInvoice,
@@ -69,6 +75,11 @@ function Field({ label, ...props }) {
 }
 
 export default function JobEditPage() {
+  const { jobId } = useParams()
+  return <JobEditPageInner key={jobId} />
+}
+
+function JobEditPageInner() {
   const { jobId } = useParams()
   const navigate = useNavigate()
   const [form, setForm] = useState(null)
@@ -140,13 +151,23 @@ export default function JobEditPage() {
     }))
   }
 
+  async function goToNextReviewItem() {
+    try {
+      const queue = await getReviewQueue()
+      const next = queue.find((item) => item.job_id !== Number(jobId))
+      navigate(next ? `/job/${next.job_id}/edit` : '/review')
+    } catch {
+      navigate('/review')
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     setSubmitting(true)
     setError(null)
     try {
       await submitJobEdit(jobId, toPayload(form))
-      navigate(`/job/${jobId}`)
+      await goToNextReviewItem()
     } catch (err) {
       setError(err.message)
       setSubmitting(false)
@@ -159,7 +180,7 @@ export default function JobEditPage() {
     setError(null)
     try {
       await deleteJob(jobId)
-      navigate('/review')
+      await goToNextReviewItem()
     } catch (err) {
       setError(err.message)
       setDeleting(false)

@@ -1,4 +1,4 @@
-from invoice_agent.services.extraction_job import run_extraction_job
+from invoice_agent.services.extraction_job import run_extraction_batch
 import uuid
 import aiofiles
 from pathlib import Path
@@ -38,16 +38,23 @@ async def _save_upload(file: UploadFile, key: str) -> None:
 
 @router.post("/upload_image")
 async def upload(
-    file: UploadFile,
+    files: list[UploadFile],
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_async_session),
-) -> JobCreationResponse:
-    _check_file_type(file)
-    key = _build_file_key(file)
-    await _save_upload(file, key)
-    job = await create_job(session, key)
-    background_tasks.add_task(run_extraction_job, job.id, job.file_key)
-    return JobCreationResponse(job_id=job.id, status=job.status)
+) -> list[JobCreationResponse]:
+    created_jobs = []
+    for file in files:
+        _check_file_type(file)
+        key = _build_file_key(file)
+        await _save_upload(file, key)
+        job = await create_job(session, key)
+        created_jobs.append(job)
+    background_tasks.add_task(
+        run_extraction_batch, [(job.id, job.file_key) for job in created_jobs]
+    )
+    return [
+        JobCreationResponse(job_id=job.id, status=job.status) for job in created_jobs
+    ]
 
 
 @router.get("/status/{job_id}")

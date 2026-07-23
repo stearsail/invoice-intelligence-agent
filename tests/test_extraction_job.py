@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -40,7 +41,7 @@ async def test_marks_job_complete_on_success(in_memory_session_factory, monkeypa
         AsyncMock(return_value=ExtractionResult(status="complete", ledger_entry_id=1)),
     )
 
-    await extraction_job.run_extraction_job(job.id, job.file_key)
+    await extraction_job._run_extraction_job(job.id, job.file_key)
 
     async with in_memory_session_factory() as session:
         updated = await query_job(session, job.id)
@@ -64,7 +65,7 @@ async def test_marks_job_extraction_failed_when_no_invoice_extracted(
         ),
     )
 
-    await extraction_job.run_extraction_job(job.id, job.file_key)
+    await extraction_job._run_extraction_job(job.id, job.file_key)
 
     async with in_memory_session_factory() as session:
         updated = await query_job(session, job.id)
@@ -83,7 +84,7 @@ async def test_marks_job_error_when_extraction_raises(
         AsyncMock(side_effect=RuntimeError("vllm connection refused")),
     )
 
-    await extraction_job.run_extraction_job(job.id, job.file_key)
+    await extraction_job._run_extraction_job(job.id, job.file_key)
 
     async with in_memory_session_factory() as session:
         updated = await query_job(session, job.id)
@@ -99,8 +100,43 @@ async def test_resolves_file_key_against_uploads_dir(
     fake_run = AsyncMock(return_value=ExtractionResult(status="complete"))
     monkeypatch.setattr(extraction_job, "run_extraction", fake_run)
 
-    await extraction_job.run_extraction_job(job.id, job.file_key)
+    await extraction_job._run_extraction_job(job.id, job.file_key)
 
     img_path = fake_run.await_args.kwargs["img_path"]
     assert img_path.endswith("a1b2c3d4.png")
     assert str(extraction_job.UPLOADS_DIR) in img_path
+
+
+@pytest.mark.anyio
+async def test_run_extraction_batch_never_exceeds_max_concurrency(monkeypatch):
+    current = 0
+    max_seen = 0
+
+    async def fake_run_extraction_job(job_id, file_key):
+        nonlocal current, max_seen
+        current += 1
+        max_seen = max(max_seen, current)
+        await asyncio.sleep(0.01)
+        current -= 1
+
+    monkeypatch.setattr(extraction_job, "_run_extraction_job", fake_run_extraction_job)
+
+    jobs = [(i, f"{i}.png") for i in range(10)]
+    await extraction_job.run_extraction_batch(jobs)
+
+    assert max_seen == extraction_job.MAX_CONCURRENCY
+
+
+@pytest.mark.anyio
+async def test_run_extraction_batch_runs_all_jobs(monkeypatch):
+    seen_job_ids = []
+
+    async def fake_run_extraction_job(job_id, file_key):
+        seen_job_ids.append(job_id)
+
+    monkeypatch.setattr(extraction_job, "_run_extraction_job", fake_run_extraction_job)
+
+    jobs = [(i, f"{i}.png") for i in range(7)]
+    await extraction_job.run_extraction_batch(jobs)
+
+    assert sorted(seen_job_ids) == list(range(7))

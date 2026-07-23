@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadImage, getPendingJobs } from '../lib/api'
+import { uploadImages, getPendingJobs } from '../lib/api'
 import { formatDateTime } from '../lib/format'
 
 export default function UploadPage() {
-  const [file, setFile] = useState(null)
+  const [files, setFiles] = useState([])
   const [error, setError] = useState(null)
   const [pendingJobs, setPendingJobs] = useState(null)
   const fileInputRef = useRef(null)
@@ -24,11 +24,11 @@ export default function UploadPage() {
 
   async function handleSubmit(event) {
     event.preventDefault()
-    if (!file) return
+    if (files.length === 0) return
     setError(null)
     try {
-      await uploadImage(file)
-      setFile(null)
+      await uploadImages(files)
+      setFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
       loadPendingJobs()
     } catch (err) {
@@ -45,7 +45,8 @@ export default function UploadPage() {
           ref={fileInputRef}
           type="file"
           accept="image/png,image/jpeg"
-          onChange={(e) => setFile(e.target.files[0] || null)}
+          multiple
+          onChange={(e) => setFiles(Array.from(e.target.files))}
           className="hidden"
         />
         <button
@@ -68,21 +69,28 @@ export default function UploadPage() {
           </svg>
           Choose file
         </button>
-
-        {file && <span className="text-sm text-gray-600">{file.name}</span>}
-
         <button
           type="submit"
-          disabled={!file}
+          disabled={files.length === 0}
           className="cursor-pointer rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           Submit for processing
         </button>
+        {files.length > 0 && (
+          <span className="text-sm text-gray-600">
+            {files.length === 1
+              ? files[0].name
+              : `${files.length} files selected`}
+          </span>
+        )}
+
       </form>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      <h2 className="mt-10 mb-3 text-lg font-semibold">Pending jobs</h2>
+      <h2 className="mt-10 mb-3 text-lg font-semibold">
+        Pending jobs{pendingJobs && ` — ${pendingJobs.length}`}
+      </h2>
       {pendingJobs && pendingJobs.length === 0 && (
         <p className="text-sm text-gray-500">Nothing currently processing.</p>
       )}

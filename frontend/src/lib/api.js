@@ -11,9 +11,11 @@ async function request(path, options) {
   return response.json()
 }
 
-export function uploadImage(file) {
+export function uploadImages(files) {
   const formData = new FormData()
-  formData.append('file', file)
+  for (const file of files) {
+    formData.append('files', file)
+  }
   return request('/extraction/upload_image', { method: 'POST', body: formData })
 }
 
