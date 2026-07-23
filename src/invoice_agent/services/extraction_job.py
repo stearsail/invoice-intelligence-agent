@@ -27,7 +27,7 @@ async def _run_extraction_job(job_id: int, file_key: str) -> None:
     await _set_status(job_id, status=result.status, error=result.error)
 
 
-async def run_extraction_batch(jobs: list[tuple[int, str]]):
+async def run_extraction_batch(jobs: list[tuple[int, str]]) -> None:
 
     async def _run_one(job_id, file_key):
         async with _semaphore:

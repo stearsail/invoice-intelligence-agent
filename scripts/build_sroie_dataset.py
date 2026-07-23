@@ -1,11 +1,11 @@
 import json
 from pathlib import Path
-from scripts.converters.cord import convert_example
+from scripts.converters.sroie import convert_example
 from datasets import load_dataset, Dataset
 from pydantic import ValidationError
 from PIL import Image
 
-output_dir = Path(__file__).parent.parent / "data" / "processed" / "CORD"
+output_dir = Path(__file__).parent.parent / "data" / "processed" / "SROIE"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 image_output_dir = output_dir / "images"
@@ -20,15 +20,13 @@ def build_dataset(dataset: Dataset, split: str = "train") -> None:
     records, skipped = [], []
     for i, example in enumerate(dataset):
         img_path = image_output_dir / split / f"{i}.png"
-        loaded = json.loads(example["ground_truth"])
-        annotation = loaded["gt_parse"]
         try:
-            invoice = convert_example(annotation)
+            invoice = convert_example(example["text"])
         except ValidationError as e:
             skipped.append({"index": i, "reason": str(e)})
             continue
         record = {
-            "source": "cord",
+            "source": "sroie",
             "split": split,
             "index": i,
             "invoice": invoice.model_dump(mode="json"),
@@ -52,16 +50,16 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Build the CORD dataset from Hugging Face"
+        description="Build the SROIE dataset from Hugging Face"
     )
     parser.add_argument(
         "--split",
         type=str,
-        choices=["train", "test", "validation"],
+        choices=["train"],
         default="train",
-        help="Which CORD split to convert",
+        help="Which SROIE split to convert (only 'train' exists in this mirror)",
     )
     args = parser.parse_args()
 
-    dataset = load_dataset("naver-clova-ix/cord-v2", split=args.split)
+    dataset = load_dataset("rajistics/sroie", split=args.split)
     build_dataset(dataset, args.split)

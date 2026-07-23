@@ -1,8 +1,27 @@
 import json
 from pathlib import Path
 from PIL import Image
+from torch.utils.data import Dataset
 
 _INSTRUCTION = "This is the image of a business document. Invoice / receipt / credit note — extract the information from within it."
+
+
+class JsonlImageDataset(Dataset):
+    """Lazily decodes one image per __getitem__ call instead of loading the
+    entire dataset into memory upfront — building `[convert_to_conversation(r)
+    for r in rows]` eagerly holds every decoded image in RAM simultaneously,
+    which is what caused an OOM kill during training on the full pooled
+    dataset (thousands of images at once vs. one batch's worth)."""
+
+    def __init__(self, rows: list[dict], data_path: Path):
+        self.rows = rows
+        self.data_path = data_path
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __getitem__(self, index: int) -> dict:
+        return convert_to_conversation(self.rows[index], self.data_path)
 
 
 def convert_to_conversation(row: dict, data_path: Path) -> dict:

@@ -5,9 +5,9 @@ from trl import SFTTrainer, SFTConfig
 import mlflow
 from pathlib import Path
 
-from scripts.training_data import convert_to_conversation, load_jsonl_data
+from scripts.training_data import JsonlImageDataset, load_jsonl_data
 
-data_dir = Path(__file__).parent.parent / "data" / "processed" / "CORD"
+data_dir = Path(__file__).parent.parent / "data" / "processed"
 output_dir = Path(__file__).parent.parent / "outputs"
 
 hyperparams = {
@@ -24,7 +24,7 @@ model, tokenizer = FastVisionModel.from_pretrained(
 
 model = FastVisionModel.get_peft_model(
     model,
-    finetune_vision_layers=False,
+    finetune_vision_layers=True,
     finetune_language_layers=True,
     finetune_attention_modules=True,
     finetune_mlp_modules=True,
@@ -36,12 +36,12 @@ model = FastVisionModel.get_peft_model(
 )
 
 train_rows = load_jsonl_data(data_dir / "train.jsonl")
-val_rows = load_jsonl_data(data_dir / "validation.jsonl")
+val_rows = load_jsonl_data(data_dir / "val.jsonl")
 
-train_data = [convert_to_conversation(row, data_dir) for row in train_rows]
-val_data = [convert_to_conversation(row, data_dir) for row in val_rows]
+train_data = JsonlImageDataset(train_rows, data_dir)
+val_data = JsonlImageDataset(val_rows, data_dir)
 
-mlflow.set_experiment("qwen3-vl-cord-finetune")
+mlflow.set_experiment("qwen3-vl-fullds-finetune")
 
 FastVisionModel.for_training(model)
 trainer = SFTTrainer(
@@ -62,9 +62,9 @@ trainer = SFTTrainer(
         lr_scheduler_type="linear",
         seed=3407,
         output_dir=output_dir
-        / f"r{hyperparams['r']}-lr{hyperparams['lr']}-epochs{hyperparams['epochs']}-novision",
+        / f"r{hyperparams['r']}-lr{hyperparams['lr']}-epochs{hyperparams['epochs']}",
         report_to="mlflow",  # For MLFlow
-        run_name=f"r{hyperparams['r']}-lr{hyperparams['lr']}-epochs{hyperparams['epochs']}-novision",
+        run_name=f"r{hyperparams['r']}-lr{hyperparams['lr']}-epochs{hyperparams['epochs']}",
         eval_strategy="steps",
         eval_steps=15,
         per_device_eval_batch_size=4,
@@ -100,7 +100,7 @@ print(f"Peak reserved memory for training % of max memory = {lora_percentage} %.
 merged_dir = (
     Path(__file__).parent.parent
     / "models"
-    / f"qwen3-vl-cord-merged-r{hyperparams['r']}-epochs{hyperparams['epochs']}"
+    / f"qwen3-vl-fullds-merged-r{hyperparams['r']}-epochs{hyperparams['epochs']}"
 )
 model.save_pretrained_merged(str(merged_dir), tokenizer)
 print(f"Saved merged model to {merged_dir}")

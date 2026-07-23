@@ -1,5 +1,5 @@
 import re
-from ..schema import Invoice, LineItem
+from invoice_agent.schema import Invoice, LineItem
 from decimal import Decimal
 
 
