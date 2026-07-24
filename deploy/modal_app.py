@@ -22,8 +22,7 @@ MODEL_DIR = "/models/qwen3-vl-fullds-merged-r8"
     timeout=3600,
     max_containers=1,
 )
-
-#NEEDS TO CORRESPOND OR BE > THAN THE MAX_CONCURRENCY OF THE SEMAPHORE IN EXTRACTION SERVICE (CONFIG.PY)
+# NEEDS TO CORRESPOND OR BE > THAN THE MAX_CONCURRENCY OF THE SEMAPHORE IN EXTRACTION SERVICE (CONFIG.PY)
 @modal.concurrent(max_inputs=16)
 @modal.web_server(port=8000, startup_timeout=300)
 def serve():
