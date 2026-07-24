@@ -14,4 +14,4 @@ class State(TypedDict):
 
 
 class Context(TypedDict):
-    model_name: str = "qwen3-vl-cord-merged"
+    model_name: str = "qwen3-vl-fullds-merged-r8"

@@ -42,6 +42,7 @@ dev = [
 train = [
     "datasets>=4.3.0",
     "mlflow>=3.14.0",
+    "psutil>=7.2.2",
     "transformers==4.57.1",
     "trl>=0.24.0",
     "unsloth>=2026.5.2",

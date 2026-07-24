@@ -14,7 +14,7 @@ class ExtractionResult:
 
 class SpecialistExtractor:
     def __init__(
-        self, base_url: str, api_key: str, model_name: str = "qwen3-vl-cord-merged"
+        self, base_url: str, api_key: str, model_name: str = "qwen3-vl-fullds-merged-r8"
     ):
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self._model_name = model_name

@@ -10,18 +10,21 @@ app = modal.App(
     ).entrypoint([]),
 )
 
-volume = modal.Volume.from_name("qwen3-vl-cord-weights", create_if_missing=True)
-MODEL_DIR = "/models/qwen3-vl-cord-merged"
+volume = modal.Volume.from_name("qwen3-vl-ft-weights", create_if_missing=True)
+MODEL_DIR = "/models/qwen3-vl-fullds-merged-r8"
 
 
 @app.function(
     gpu="L4",
     volumes={"/models": volume},
     secrets=[modal.Secret.from_name("vllm-api-key")],
-    scaledown_window=300,
+    scaledown_window=3600,
     timeout=3600,
     max_containers=1,
 )
+
+#NEEDS TO CORRESPOND OR BE > THAN THE MAX_CONCURRENCY OF THE SEMAPHORE IN EXTRACTION SERVICE (CONFIG.PY)
+@modal.concurrent(max_inputs=16)
 @modal.web_server(port=8000, startup_timeout=300)
 def serve():
     subprocess.Popen(
@@ -30,7 +33,7 @@ def serve():
             "serve",
             MODEL_DIR,
             "--served-model-name",
-            "qwen3-vl-cord-merged",
+            "qwen3-vl-fullds-merged-r8",
             "--host",
             "0.0.0.0",
             "--port",

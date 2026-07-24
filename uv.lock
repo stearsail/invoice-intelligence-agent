@@ -2111,6 +2111,7 @@ dev = [
 train = [
     { name = "datasets" },
     { name = "mlflow" },
+    { name = "psutil" },
     { name = "transformers" },
     { name = "trl" },
     { name = "unsloth", version = "2026.5.2", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
@@ -2147,6 +2148,7 @@ dev = [
 train = [
     { name = "datasets", specifier = ">=4.3.0" },
     { name = "mlflow", specifier = ">=3.14.0" },
+    { name = "psutil", specifier = ">=7.2.2" },
     { name = "transformers", specifier = "==4.57.1" },
     { name = "trl", specifier = ">=0.24.0" },
     { name = "unsloth", specifier = ">=2026.5.2" },

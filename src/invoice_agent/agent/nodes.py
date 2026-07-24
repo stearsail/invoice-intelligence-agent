@@ -15,7 +15,7 @@ async def specialist_extract(specialist: SpecialistExtractor, state: State) -> d
 
 
 async def frontier_extract(
-    frontier: FrontierExtractor, state: State, extra_context: str | None = None
+    frontier: FrontierExtractor, state: State, extra_context: str = ""
 ) -> dict:
     result = await frontier.extract_invoice(state["image"], extra_context)
     return {
