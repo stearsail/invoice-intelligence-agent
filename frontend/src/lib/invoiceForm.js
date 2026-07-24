@@ -1,7 +1,7 @@
 export const CATEGORY_STYLES = {
-  unverifiable: 'text-amber-700',
-  mismatch: 'text-red-700',
-  duplicate: 'text-purple-700',
+  unverifiable: 'text-amber-300',
+  mismatch: 'text-red-300',
+  duplicate: 'text-purple-300',
 }
 
 export const BLANK_PARTY = { name: '', address: '', tax_id: '', iban: '' }

@@ -34,13 +34,13 @@ export default function ReviewQueuePage() {
         </h1>
         <button
           onClick={load}
-          className="cursor-pointer rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100"
+          className="cursor-pointer rounded border border-edge-strong px-3 py-1.5 text-sm text-body hover:bg-surface-hover"
         >
           Refresh
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
       {pageItems && (
         <>
           <JobTable

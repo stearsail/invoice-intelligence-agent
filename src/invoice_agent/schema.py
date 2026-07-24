@@ -24,7 +24,7 @@ class Invoice(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vendor: Party | None = None
     customer: Party | None = None
-    document_type: Literal["invoice", "receipt", "credit_note"]
+    document_type: Literal["invoice", "receipt"]
     invoice_number: str | None = None
     issue_date: date | None = None
     due_date: date | None = None

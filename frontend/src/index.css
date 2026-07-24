@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+@theme {
+  --color-page: #0b1220; /* page background (darkest layer) */
+  --color-surface: #111a2e; /* cards, panels, inputs */
+  --color-surface-hover: #1a2740; /* hover / row highlight */
+  --color-elevated: #223055; /* pressed / stronger fill */
+  --color-edge: #243350; /* borders, dividers */
+  --color-edge-strong: #33456b; /* input borders, outlined buttons */
+  --color-body: #e5e9f0; /* primary text */
+  --color-muted: #93a1bd; /* secondary text */
+  --color-accent: #4f8cff; /* primary CTA, links, active */
+  --color-accent-hover: #3b7aef; /* accent hover */
+}
+
 body {
   margin: 0;
+  background-color: var(--color-page);
+  color: var(--color-body);
 }

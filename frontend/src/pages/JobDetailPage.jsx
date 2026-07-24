@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getJobDetail, getJobImageUrl } from '../lib/api'
 import { CATEGORY_STYLES, toFormInvoice } from '../lib/invoiceForm'
 
-const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
+const labelClass = 'block text-xs font-medium text-muted mb-1'
 
 function displayValue(value) {
   if (value === null || value === undefined || value === '') return '—'
@@ -22,7 +22,6 @@ function ReadOnlyField({ label, value }) {
 const DOCUMENT_TYPE_LABELS = {
   invoice: 'Invoice',
   receipt: 'Receipt',
-  credit_note: 'Credit Note',
 }
 
 export default function JobDetailPage() {
@@ -51,15 +50,15 @@ export default function JobDetailPage() {
     load()
   }, [jobId])
 
-  if (error) return <p className="p-10 text-sm text-red-600">{error}</p>
-  if (form === null) return <p className="p-10 text-sm text-gray-500">Loading…</p>
+  if (error) return <p className="p-10 text-sm text-red-400">{error}</p>
+  if (form === null) return <p className="p-10 text-sm text-muted">Loading…</p>
   if (form === false) {
     return (
       <div className="p-10">
-        <p className="text-sm text-amber-700">This job doesn't exist.</p>
+        <p className="text-sm text-amber-300">This job doesn't exist.</p>
         <Link
           to="/ledger"
-          className="mt-4 inline-block rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          className="mt-4 inline-block rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
         >
           &larr; Back to Ledger
         </Link>
@@ -69,22 +68,22 @@ export default function JobDetailPage() {
 
   return (
     <div className="mx-auto w-full px-[1%]">
-      <div className="grid grid-cols-2 gap-4 bg-gray-100 p-2">
-        <div className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-2">
+      <div className="grid grid-cols-2 gap-4 bg-surface p-2">
+        <div className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-5">
           <div>
             {reviewInfo &&
               (reviewInfo.jobError || reviewInfo.reviewReason.length > 0) && (
-                <div className="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-2">
-                  <h2 className="text-sm font-semibold text-amber-900">Issues:</h2>
+                <div className="mb-6 rounded border border-amber-500/30 bg-amber-500/10 px-4 py-2">
+                  <h2 className="text-sm font-semibold text-amber-300">Issues:</h2>
                   {reviewInfo.jobError && (
-                    <p className="text-sm text-red-700">{reviewInfo.jobError}</p>
+                    <p className="text-sm text-red-300">{reviewInfo.jobError}</p>
                   )}
                   {reviewInfo.reviewReason.length > 0 && (
                     <ul className="list-disc space-y-1 pl-5 text-sm">
                       {reviewInfo.reviewReason.map((issue, idx) => (
                         <li
                           key={idx}
-                          className={CATEGORY_STYLES[issue.category] || 'text-gray-700'}
+                          className={CATEGORY_STYLES[issue.category] || 'text-body'}
                         >
                           <span className="text-xs font-medium uppercase opacity-70">
                             {issue.category}
@@ -111,7 +110,7 @@ export default function JobDetailPage() {
             <ReadOnlyField label="Due date" value={form.due_date} />
           </div>
 
-          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-gray-300 pt-3 pb-3">
+          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-edge pt-3 pb-3">
             <div>
               <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
               <div className="space-y-2">
@@ -131,22 +130,22 @@ export default function JobDetailPage() {
             </div>
           </div>
 
-          <div className="border-t border-gray-300 pt-3 pb-3">
+          <div className="border-t border-edge pt-3 pb-3">
             <h2 className="mb-2 text-sm font-semibold">Line items</h2>
             <table className="w-full border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="py-1 pr-2 font-medium text-gray-600">#</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Description</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Unit price</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Quantity</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Line total</th>
+                <tr className="border-b border-edge">
+                  <th className="py-1 pr-2 font-medium text-muted">#</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Description</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Unit price</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Quantity</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Line total</th>
                 </tr>
               </thead>
               <tbody>
                 {form.line_items.map((line, idx) => (
-                  <tr key={idx} className="border-b border-gray-100">
-                    <td className="py-1 pr-2 text-gray-500">{idx + 1}</td>
+                  <tr key={idx} className="border-b border-edge">
+                    <td className="py-1 pr-2 text-muted">{idx + 1}</td>
                     <td className="py-1 pr-2">{displayValue(line.description)}</td>
                     <td className="py-1 pr-2">{displayValue(line.unit_price)}</td>
                     <td className="py-1 pr-2">{displayValue(line.quantity)}</td>
@@ -157,7 +156,7 @@ export default function JobDetailPage() {
             </table>
           </div>
 
-          <div className="grid grid-cols-5 gap-4 border-t border-gray-300 pt-3">
+          <div className="grid grid-cols-5 gap-4 border-t border-edge pt-3">
             <ReadOnlyField label="Currency" value={form.currency} />
             <ReadOnlyField label="Subtotal" value={form.subtotal} />
             <ReadOnlyField label="Tax" value={form.tax} />
@@ -172,13 +171,13 @@ export default function JobDetailPage() {
           <div className="flex items-center gap-3 mt-5">
             <Link
               to={`/job/${jobId}/edit`}
-              className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
             >
               Edit
             </Link>
             <Link
               to="/ledger"
-              className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+              className="rounded border border-edge-strong px-4 py-2 text-sm font-medium text-body hover:bg-surface-hover"
             >
               Back
             </Link>
@@ -190,7 +189,7 @@ export default function JobDetailPage() {
             <img
               src={getJobImageUrl(jobId)}
               alt={`Document for job ${jobId}`}
-              className="rounded border border-gray-200"
+              className="rounded border border-edge"
             />
           </a>
         </div>

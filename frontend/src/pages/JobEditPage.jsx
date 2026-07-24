@@ -62,8 +62,8 @@ function toPayload(form) {
 }
 
 const inputClass =
-  'w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none'
-const labelClass = 'block text-xs font-medium text-gray-600 mb-1'
+  'w-full rounded border border-edge-strong bg-surface px-2 py-1 text-sm text-body focus:border-accent focus:outline-none'
+const labelClass = 'block text-xs font-medium text-muted mb-1'
 
 function Field({ label, ...props }) {
   return (
@@ -187,15 +187,15 @@ function JobEditPageInner() {
     }
   }
 
-  if (error) return <p className="p-10 text-sm text-red-600">{error}</p>
-  if (form === null) return <p className="p-10 text-sm text-gray-500">Loading…</p>
+  if (error) return <p className="p-10 text-sm text-red-400">{error}</p>
+  if (form === null) return <p className="p-10 text-sm text-muted">Loading…</p>
   if (form === false) {
     return (
       <div className="p-10">
-        <p className="text-sm text-amber-700">This job doesn't exist.</p>
+        <p className="text-sm text-amber-300">This job doesn't exist.</p>
         <Link
           to="/review"
-          className="mt-4 inline-block rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+          className="mt-4 inline-block rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-hover"
         >
           &larr; Back to Review Queue
         </Link>
@@ -205,27 +205,27 @@ function JobEditPageInner() {
 
   return (
     <div className="mx-auto w-full px-[1%]">
-      <div className="grid grid-cols-2 gap-4 bg-gray-100 p-2">
+      <div className="grid grid-cols-2 gap-4 bg-surface p-2">
         <form
           onSubmit={handleSubmit}
-          className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-2"
+          className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-5"
         >
           <div>
           {reviewInfo &&
             (reviewInfo.jobError || reviewInfo.reviewReason.length > 0) && (
-              <div className="mb-6 rounded border border-amber-200 bg-amber-50 px-4 py-2">
-                <h2 className="text-sm font-semibold text-amber-900">
+              <div className="mb-6 rounded border border-amber-500/30 bg-amber-500/10 px-4 py-2">
+                <h2 className="text-sm font-semibold text-amber-300">
                   Issues:
                 </h2>
                 {reviewInfo.jobError && (
-                  <p className="text-sm text-red-700">{reviewInfo.jobError}</p>
+                  <p className="text-sm text-red-300">{reviewInfo.jobError}</p>
                 )}
                 {reviewInfo.reviewReason.length > 0 && (
                   <ul className="list-disc space-y-1 pl-5 text-sm">
                     {reviewInfo.reviewReason.map((issue, idx) => (
                       <li
                         key={idx}
-                        className={CATEGORY_STYLES[issue.category] || 'text-gray-700'}
+                        className={CATEGORY_STYLES[issue.category] || 'text-body'}
                       >
                         <span className="text-xs font-medium uppercase opacity-70">
                           {issue.category}
@@ -248,7 +248,6 @@ function JobEditPageInner() {
               >
                 <option value="invoice">Invoice</option>
                 <option value="receipt">Receipt</option>
-                <option value="credit_note">Credit Note</option>
               </select>
             </div>
             <Field
@@ -273,7 +272,7 @@ function JobEditPageInner() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-gray-300 pt-3 pb-3">
+          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-edge pt-3 pb-3">
             <div>
               <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
               <div className="space-y-2">
@@ -320,13 +319,13 @@ function JobEditPageInner() {
               </div>
             </div>
           </div>
-          <div className="border-t border-gray-300 pt-3 pb-3">
+          <div className="border-t border-edge pt-3 pb-3">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Line items</h2>
               <button
                 type="button"
                 onClick={addLineItem}
-                className="cursor-pointer rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100"
+                className="cursor-pointer rounded border border-edge-strong px-2 py-1 text-xs text-body hover:bg-surface-hover"
               >
                 + Add line item
               </button>
@@ -334,11 +333,11 @@ function JobEditPageInner() {
             <table className="w-full border-collapse text-left text-sm">
               <thead>
                 <tr>
-                  <th className="py-1 pr-2 font-medium text-gray-600">#</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Description</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Unit price</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Quantity</th>
-                  <th className="py-1 pr-2 font-medium text-gray-600">Line total</th>
+                  <th className="py-1 pr-2 font-medium text-muted">#</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Description</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Unit price</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Quantity</th>
+                  <th className="py-1 pr-2 font-medium text-muted">Line total</th>
                   <th className="py-1"></th>
                 </tr>
               </thead>
@@ -346,9 +345,9 @@ function JobEditPageInner() {
                 {form.line_items.map((line, idx) => (
                   <tr
                     key={idx}
-                    className={`border-b border-gray-100 ${line.marked ? 'opacity-40' : ''}`}
+                    className={`border-b border-edge ${line.marked ? 'opacity-40' : ''}`}
                   >
-                    <td className="py-1 pr-2 text-gray-500">{idx + 1}</td>
+                    <td className="py-1 pr-2 text-muted">{idx + 1}</td>
                     <td className={`py-1 pr-2 ${line.marked ? 'line-through' : ''}`}>
                       <input
                         className={inputClass}
@@ -383,7 +382,7 @@ function JobEditPageInner() {
                     </td>
                     <td className="py-1 text-center">
                       {lineItemHasData(line) ? (
-                        <label className="flex cursor-pointer items-center gap-1 text-xs text-red-600">
+                        <label className="flex cursor-pointer items-center gap-1 text-xs text-red-400">
                           <input
                             type="checkbox"
                             checked={line.marked}
@@ -395,7 +394,7 @@ function JobEditPageInner() {
                         <button
                           type="button"
                           onClick={() => removeLineItem(idx)}
-                          className="cursor-pointer text-xs text-red-600 hover:underline"
+                          className="cursor-pointer text-xs text-red-400 hover:underline"
                         >
                           Remove
                         </button>
@@ -407,7 +406,7 @@ function JobEditPageInner() {
             </table>
           </div>
 
-          <div className="grid grid-cols-5 gap-4 border-t border-gray-300 pt-3">
+          <div className="grid grid-cols-5 gap-4 border-t border-edge pt-3">
             <Field
               label="Currency"
               value={form.currency}
@@ -444,12 +443,12 @@ function JobEditPageInner() {
             />
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-400">{error}</p>}
           <div className='flex items-center gap-3 mt-5'>
             <button
               type="submit"
               disabled={submitting}
-              className="cursor-pointer rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+              className="cursor-pointer rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submitting ? 'Saving…' : 'Save'}
             </button>
@@ -457,7 +456,7 @@ function JobEditPageInner() {
               type="button"
               disabled={submitting}
               onClick={() => navigate('/review')}
-              className="cursor-pointer rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+              className="cursor-pointer rounded border border-edge-strong px-4 py-2 text-sm font-medium text-body hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
               Cancel
             </button>
@@ -465,7 +464,7 @@ function JobEditPageInner() {
               type="button"
               disabled={deleting}
               onClick={handleDelete}
-              className="ml-auto cursor-pointer rounded bg-red-500 px-4 py-2 text-sm font-medium text-white hover:bg-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+              className="ml-auto cursor-pointer rounded bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {deleting ? 'Deleting…' : 'Delete'}
             </button>
@@ -476,7 +475,7 @@ function JobEditPageInner() {
             <img
               src={getJobImageUrl(jobId)}
               alt={`Document for job ${jobId}`}
-              className="rounded border border-gray-200"
+              className="rounded border border-edge"
             />
           </a>
         </div>

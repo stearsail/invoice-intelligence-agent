@@ -7,12 +7,12 @@ import JobEditPage from './pages/JobEditPage'
 
 const navLinkClass = ({ isActive }) =>
   `px-3 py-2 text-sm font-medium rounded ${
-    isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
+    isActive ? 'bg-accent text-white' : 'text-muted hover:bg-surface-hover'
   }`
 
 function Nav() {
   return (
-    <nav className="border-b border-gray-200">
+    <nav className="border-b border-edge">
       <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-3">
         <span className="mr-4 text-sm font-semibold">Invoice Agent</span>
         <NavLink to="/" end className={navLinkClass}>
