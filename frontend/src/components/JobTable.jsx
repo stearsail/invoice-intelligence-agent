@@ -3,6 +3,7 @@ import { formatDateTime } from '../lib/format'
 
 const STATUS_STYLES = {
   pending: 'bg-surface-hover text-muted',
+  retrying: 'bg-accent/15 text-accent',
   complete: 'bg-green-500/15 text-green-300',
   extraction_failed: 'bg-amber-500/15 text-amber-300',
   error: 'bg-red-500/15 text-red-300',
@@ -15,11 +16,12 @@ function humanizeStatus(status) {
     .join(' ')
 }
 
-function StatusBadge({ status }) {
+export function StatusBadge({ status, attempts }) {
   const style = STATUS_STYLES[status] || 'bg-surface-hover text-muted'
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${style}`}>
       {humanizeStatus(status)}
+      {status === 'retrying' && attempts ? ` (${attempts})` : ''}
     </span>
   )
 }

@@ -27,6 +27,8 @@ class LedgerEntryResponse(BaseModel):
 class PendingJobResponse(BaseModel):
     job_id: int
     created_at: datetime
+    status: str
+    attempts: int
 
 
 class JobEntryPairResponse(BaseModel):
@@ -34,5 +36,6 @@ class JobEntryPairResponse(BaseModel):
     created_at: datetime
     status: str
     error: str | None
+    attempts: int
     ledger_entry: LedgerEntryResponse | None
     ledger_entry_error: str | None = None

@@ -54,3 +54,7 @@ export function getJobImageUrl(jobId) {
 export function deleteJob(jobId) {
   return request(`/ledger/${jobId}`, { method: 'DELETE' })
 }
+
+export function retryJob(jobId) {
+  return request(`/ledger/${jobId}/retry`, { method: 'POST' })
+}

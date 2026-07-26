@@ -45,13 +45,19 @@ def _to_response(job: Job, entry: LedgerEntry | None) -> JobEntryPairResponse:
         created_at=job.created_at,
         status=job.status,
         error=job.error,
+        attempts=job.attempts,
         ledger_entry=ledger_entry,
         ledger_entry_error=ledger_entry_error,
     )
 
 
 def _to_pending_response(job: Job) -> PendingJobResponse:
-    return PendingJobResponse(job_id=job.id, created_at=job.created_at)
+    return PendingJobResponse(
+        job_id=job.id,
+        created_at=job.created_at,
+        status=job.status,
+        attempts=job.attempts,
+    )
 
 
 @router.get("/review", response_model=list[JobEntryPairResponse])

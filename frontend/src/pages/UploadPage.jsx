@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { uploadImages, getPendingJobs } from '../lib/api'
 import { formatDateTime } from '../lib/format'
+import { StatusBadge } from '../components/JobTable'
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -164,7 +165,7 @@ export default function UploadPage() {
             >
               <span className="font-medium">Job {item.job_id}</span>
               <span className="text-muted">{formatDateTime(item.created_at)}</span>
-              <span className="text-muted">still processing…</span>
+              <StatusBadge status={item.status} attempts={item.attempts} />
             </li>
           ))}
         </ul>

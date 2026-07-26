@@ -21,8 +21,9 @@ class LedgerEntry(SQLModel, table=True):
 class Job(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.now)
-    status: Literal["pending", "complete", "extraction_failed", "error"] = Field(
-        default="pending", sa_column=Column(String, nullable=False)
+    attempts: int = Field(default=1)
+    status: Literal["pending", "complete", "extraction_failed", "error", "retrying"] = (
+        Field(default="pending", sa_column=Column(String, nullable=False))
     )
     error: str | None = Field(default=None)
     file_key: str

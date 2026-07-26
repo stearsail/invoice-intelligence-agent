@@ -15,11 +15,14 @@ async def update_job(
     session: AsyncSession,
     job_id: int,
     status_update: str,
+    attempts_update: int,
     error_update: str | None = None,
 ) -> Job:
     job = await session.get(Job, job_id)
     job.status = status_update
+    job.attempts = attempts_update
     job.error = error_update
+
     session.add(job)
     await session.commit()
     return job
@@ -142,7 +145,7 @@ async def query_resolved_ledger(
 
 
 async def query_pending_jobs(session: AsyncSession) -> list[Job]:
-    statement = select(Job).where(Job.status == "pending")
+    statement = select(Job).where(Job.status.in_(["pending", "retrying"]))
     results = await session.exec(statement)
     return results
 
