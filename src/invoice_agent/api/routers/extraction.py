@@ -1,8 +1,9 @@
-from invoice_agent.services.extraction_job import run_extraction_batch
+from arq import ArqRedis
+from invoice_agent.queue.pool import get_redis_pool
 import uuid
 import aiofiles
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.api.schema.responses import JobCreationResponse
@@ -39,8 +40,8 @@ async def _save_upload(file: UploadFile, key: str) -> None:
 @router.post("/upload_image")
 async def upload(
     files: list[UploadFile],
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_async_session),
+    pool: ArqRedis = Depends(get_redis_pool),
 ) -> list[JobCreationResponse]:
     created_jobs = []
     for file in files:
@@ -49,9 +50,8 @@ async def upload(
         await _save_upload(file, key)
         job = await create_job(session, key)
         created_jobs.append(job)
-    background_tasks.add_task(
-        run_extraction_batch, [(job.id, job.file_key) for job in created_jobs]
-    )
+    for job in created_jobs:
+        await pool.enqueue_job("process_job", job.id, job.file_key)
     return [
         JobCreationResponse(job_id=job.id, status=job.status) for job in created_jobs
     ]

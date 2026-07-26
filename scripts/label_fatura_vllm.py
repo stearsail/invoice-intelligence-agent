@@ -11,6 +11,7 @@ from datasets import load_dataset
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from vllm import LLM, SamplingParams
 
+
 class Party(BaseModel):
     # "ignore" drops contact fields the model reads (email/phone/website) that
     # aren't in the project schema; name optional so a missed name doesn't lose

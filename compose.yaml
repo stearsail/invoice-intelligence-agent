@@ -1,3 +1,6 @@
+volumes:
+  pgdata:
+  redis-data:
 services:
   db:
     image: postgres:16
@@ -14,6 +17,34 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  redis:
+    image: redis:latest
+    volumes:
+      - redis-data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  worker:
+    build: .
+    volumes:
+      - ./data/uploads:/app/data/uploads
+    command: arq invoice_agent.queue.worker.WorkerSettings
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   backend:
     build: .
     volumes:
@@ -23,6 +54,7 @@ services:
     environment:
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
+      - REDIS_HOST=redis
     env_file:
       - .env
     healthcheck:
@@ -32,6 +64,8 @@ services:
       retries: 5
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       # vllm:
       #   condition: service_healthy
@@ -76,6 +110,3 @@ services:
   #     timeout: 5s
   #     retries: 5
   #     start_period: 90s
-
-volumes:
-  pgdata:
