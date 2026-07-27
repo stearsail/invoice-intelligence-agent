@@ -3,7 +3,7 @@ from PIL import Image
 import base64
 
 
-def load_image_b64(path: str, resize: bool = True, max_pixels: int = 1_000_000) -> str:
+def load_image_b64(path, resize=True, max_pixels=1_000_000) -> tuple[str, str]:
     img = Image.open(path)
     if resize:
         w, h = img.size
@@ -12,7 +12,8 @@ def load_image_b64(path: str, resize: bool = True, max_pixels: int = 1_000_000) 
             img = img.resize((int(w * scale), int(h * scale)))
             buffer = io.BytesIO()
             img.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode()
+            return base64.b64encode(buffer.getvalue()).decode(), "image/png"
 
     with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+        data = base64.b64encode(f.read()).decode()
+    return data, Image.MIME.get(img.format, "image/png")

@@ -1,10 +1,13 @@
 import asyncio
 from dataclasses import dataclass
+import logging
 from invoice_agent.agent.error_categories import categorize_error
 from invoice_agent.agent.images import load_image_b64
 from invoice_agent.schema import Invoice
 from langchain_anthropic import ChatAnthropic
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,8 +38,9 @@ class SpecialistExtractor:
     # Measure the malformed-output rate first — the specialist is fine-tuned on
     # this format, so the gain may not justify the second schema.
     async def extract_invoice(self, img_path: str) -> ExtractionResult:
+        response = None
         try:
-            img_b64 = await asyncio.to_thread(load_image_b64, img_path)
+            img_b64, mime_type = await asyncio.to_thread(load_image_b64, img_path)
             response = await self._client.chat.completions.create(
                 model=self._model_name,
                 messages=[
@@ -50,7 +54,7 @@ class SpecialistExtractor:
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/png;base64,{img_b64}"
+                                    "url": f"data:{mime_type};base64,{img_b64}"
                                 },
                             },
                         ],
@@ -67,6 +71,12 @@ class SpecialistExtractor:
             category = categorize_error(e)
             if category == "connectivity":
                 raise
+            if response is not None:
+                logger.warning(
+                    "Extraction parse failure (%s): raw=%r",
+                    category,
+                    response.choices[0].message.content[:2000],
+                )
             return ExtractionResult(invoice=None, parse_error=f"{category}: {e}")
 
 
@@ -85,7 +95,7 @@ class FrontierExtractor:
         self, img_path: str, extra_context: str = ""
     ) -> ExtractionResult:
         try:
-            img_b64 = await asyncio.to_thread(load_image_b64, img_path)
+            img_b64, mime_type = await asyncio.to_thread(load_image_b64, img_path)
             message = {
                 "role": "user",
                 "content": [
@@ -99,15 +109,26 @@ class FrontierExtractor:
                     {
                         "type": "image",
                         "base64": img_b64,
-                        "mime_type": "image/png",
+                        "mime_type": mime_type,
                     },
                 ],
             }
-            structured_model = self._client.with_structured_output(Invoice)
-            invoice = await structured_model.ainvoke([message])
-            return ExtractionResult(invoice=invoice, parse_error=None)
+            structured_model = self._client.with_structured_output(
+                Invoice, include_raw=True
+            )
+            result = await structured_model.ainvoke([message])
         except Exception as e:
             category = categorize_error(e)
             if category == "connectivity":
                 raise
             return ExtractionResult(invoice=None, parse_error=f"{category}: {e}")
+        if result["parsing_error"] is not None:
+            category = categorize_error(result["parsing_error"])
+            raw_text = result["raw"].content if result.get("raw") else None
+            logger.warning(
+                "Extraction parse failure (unknown): raw=%r", str(raw_text)[:2000]
+            )
+            return ExtractionResult(
+                invoice=None, parse_error=f"unknown:{result['parsing_error']}"
+            )
+        return ExtractionResult(invoice=result["parsed"], parse_error=None)

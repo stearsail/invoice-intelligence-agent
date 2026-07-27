@@ -43,7 +43,12 @@ export default function FullLedgerPage() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       {pageItems && (
         <>
-          <JobTable items={pageItems} linkLabel="View" linkTo={(id) => `/job/${id}`} />
+          <JobTable
+            items={pageItems}
+            linkLabel="View"
+            linkTo={(id) => `/job/${id}`}
+            showEntryId
+          />
           <Pagination
             page={currentPage}
             totalPages={totalPages}

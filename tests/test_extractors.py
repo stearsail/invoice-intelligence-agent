@@ -54,7 +54,15 @@ def _fake_frontier_client(
     if raises:
         structured.ainvoke = AsyncMock(side_effect=RuntimeError("frontier boom"))
     else:
-        structured.ainvoke = AsyncMock(return_value=invoice)
+        # with_structured_output(..., include_raw=True) returns this dict shape,
+        # not the parsed model directly.
+        structured.ainvoke = AsyncMock(
+            return_value={
+                "raw": MagicMock(),
+                "parsed": invoice,
+                "parsing_error": None,
+            }
+        )
     fake_client = MagicMock()
     fake_client.with_structured_output.return_value = structured
     return fake_client
@@ -67,7 +75,9 @@ def anyio_backend():
 
 @pytest.fixture(autouse=True)
 def no_real_image_io(monkeypatch):
-    monkeypatch.setattr(extractors, "load_image_b64", lambda path: "fakeb64")
+    monkeypatch.setattr(
+        extractors, "load_image_b64", lambda path: ("fakeb64", "image/png")
+    )
 
 
 def _specialist(client: MagicMock) -> SpecialistExtractor:
@@ -100,7 +110,7 @@ async def test_specialist_reports_parse_error_on_invalid_json():
     result = await extractor.extract_invoice("fake.png")
 
     assert result.invoice is None
-    assert result.parse_error.startswith("unknown:")
+    assert result.parse_error.startswith("invalid_output:")
 
 
 @pytest.mark.anyio

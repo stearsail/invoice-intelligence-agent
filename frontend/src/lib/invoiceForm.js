@@ -4,6 +4,29 @@ export const CATEGORY_STYLES = {
   duplicate: 'text-purple-300',
 }
 
+// Maps the category prefix categorize_error() embeds in "unverifiable" issue
+// messages (e.g. "Extraction failed entirely — invalid_output: 1 validation
+// error for Invoice ...") to plain-language copy for non-developers.
+export const ERROR_CATEGORY_MESSAGES = {
+  connectivity:
+    'Temporarily unable to reach the extraction service — this usually resolves on retry.',
+  missing_file: 'The uploaded document could not be found.',
+  invalid_output:
+    "The extracted data didn't match the expected format for one or more fields (e.g., a non-numeric value where a number was expected).",
+  unknown: 'Something unexpected happened while processing this document.',
+}
+
+// Only "unverifiable" issues carry an embedded category prefix (it's the one
+// category validate_reconcile builds from a raw parse_error); other
+// categories (mismatch, duplicate) already have human-authored messages.
+export function friendlyIssueMessage(issue) {
+  if (issue.category !== 'unverifiable') return issue.message
+  const category = Object.keys(ERROR_CATEGORY_MESSAGES).find((cat) =>
+    issue.message.includes(`${cat}:`)
+  )
+  return category ? ERROR_CATEGORY_MESSAGES[category] : issue.message
+}
+
 export const BLANK_PARTY = { name: '', address: '', tax_id: '', iban: '' }
 export const BLANK_LINE_ITEM = {
   description: '',

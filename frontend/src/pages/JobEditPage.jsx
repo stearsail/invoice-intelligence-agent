@@ -5,11 +5,11 @@ import {
   getReviewQueue,
   submitJobEdit,
   deleteJob,
-  retryJob,
   getJobImageUrl,
 } from '../lib/api'
 import {
   CATEGORY_STYLES,
+  friendlyIssueMessage,
   toFormInvoice,
   BLANK_LINE_ITEM,
   lineItemHasData,
@@ -87,7 +87,6 @@ function JobEditPageInner() {
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const [retrying, setRetrying] = useState(false)
   const [reviewInfo, setReviewInfo] = useState(null)
 
   useEffect(() => {
@@ -98,7 +97,6 @@ function JobEditPageInner() {
         setReviewInfo({
           jobError: item.error,
           reviewReason: item.ledger_entry?.review_reason ?? [],
-          status: item.status,
         })
       } catch (err) {
         if (err.status === 404) {
@@ -190,18 +188,6 @@ function JobEditPageInner() {
     }
   }
 
-  async function handleRetry() {
-    setRetrying(true)
-    setError(null)
-    try {
-      await retryJob(jobId)
-      await goToNextReviewItem()
-    } catch (err) {
-      setError(err.message)
-      setRetrying(false)
-    }
-  }
-
   if (error) return <p className="p-10 text-sm text-red-400">{error}</p>
   if (form === null) return <p className="p-10 text-sm text-muted">Loading…</p>
   if (form === false) {
@@ -238,12 +224,13 @@ function JobEditPageInner() {
                     {reviewInfo.reviewReason.map((issue, idx) => (
                       <li
                         key={idx}
+                        title={issue.message}
                         className={CATEGORY_STYLES[issue.category] || 'text-body'}
                       >
                         <span className="text-xs font-medium uppercase opacity-70">
                           {issue.category}
                         </span>{' '}
-                        — {issue.message}
+                        — {friendlyIssueMessage(issue)}
                       </li>
                     ))}
                   </ul>
@@ -473,17 +460,6 @@ function JobEditPageInner() {
             >
               Cancel
             </button>
-            {(reviewInfo?.status === 'error' ||
-              reviewInfo?.status === 'extraction_failed') && (
-              <button
-                type="button"
-                disabled={retrying}
-                onClick={handleRetry}
-                className="cursor-pointer rounded border border-accent px-4 py-2 text-sm font-medium text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {retrying ? 'Requeuing…' : 'Retry'}
-              </button>
-            )}
             <button
               type="button"
               disabled={deleting}

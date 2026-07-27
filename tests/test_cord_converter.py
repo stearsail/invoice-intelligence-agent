@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from invoice_agent.converters.cord import (
+from scripts.converters.cord import (
     _drop_sign,
     _menu_items,
     _parse_amount,

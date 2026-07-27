@@ -26,7 +26,7 @@ export function StatusBadge({ status, attempts }) {
   )
 }
 
-export default function JobTable({ items, linkLabel, linkTo }) {
+export default function JobTable({ items, linkLabel, linkTo, showEntryId = false }) {
   if (!items || items.length === 0) {
     return <p className="text-muted">Nothing to show.</p>
   }
@@ -35,7 +35,9 @@ export default function JobTable({ items, linkLabel, linkTo }) {
     <table className="w-full border-collapse text-center text-sm">
       <thead>
         <tr className="border-b border-edge">
-          <th className="py-2 pr-4 font-medium text-muted">Job ID</th>
+          <th className="py-2 pr-4 font-medium text-muted">
+            {showEntryId ? 'Entry ID' : 'Job ID'}
+          </th>
           <th className="py-2 pr-4 font-medium text-muted">Status</th>
           <th className="py-2 pr-4 font-medium text-muted">Created</th>
           <th className="py-2 font-medium text-muted">Details</th>
@@ -44,7 +46,9 @@ export default function JobTable({ items, linkLabel, linkTo }) {
       <tbody>
         {items.map((item) => (
           <tr key={item.job_id} className="border-b border-edge hover:bg-surface-hover">
-            <td className="py-2 pr-4">{item.job_id}</td>
+            <td className="py-2 pr-4">
+              {showEntryId ? (item.ledger_entry?.id ?? item.job_id) : item.job_id}
+            </td>
             <td className="py-2 pr-4">
               <StatusBadge status={item.status} />
             </td>

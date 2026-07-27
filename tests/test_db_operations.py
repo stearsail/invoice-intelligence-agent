@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.db.operations import (
     create_job,
     find_duplicate,
+    query_errored_jobs,
     query_resolved_ledger,
     query_job,
     query_reviewables,
@@ -183,18 +184,25 @@ async def test_update_job_sets_status_and_error(session):
     job = await _job(session)
 
     updated = await update_job(
-        session, job_id=job.id, status_update="error", error_update="boom"
+        session,
+        job_id=job.id,
+        status_update="error",
+        attempts_update=3,
+        error_update="boom",
     )
 
     assert updated.status == "error"
     assert updated.error == "boom"
+    assert updated.attempts == 3
 
 
 @pytest.mark.anyio
 async def test_update_job_persists_across_reads(session):
     job = await _job(session)
 
-    await update_job(session, job_id=job.id, status_update="complete")
+    await update_job(
+        session, job_id=job.id, status_update="complete", attempts_update=1
+    )
     reread = await query_job(session, job.id)
 
     assert reread.status == "complete"
@@ -203,7 +211,9 @@ async def test_update_job_persists_across_reads(session):
 @pytest.mark.anyio
 async def test_query_reviewables_excludes_clean_completed_jobs(session):
     job = await _job(session)
-    await update_job(session, job_id=job.id, status_update="complete")
+    await update_job(
+        session, job_id=job.id, status_update="complete", attempts_update=1
+    )
     await write_entry(session, job.id, _invoice(), needs_review=False)
 
     reviewables = await query_reviewables(session)
@@ -214,7 +224,9 @@ async def test_query_reviewables_excludes_clean_completed_jobs(session):
 @pytest.mark.anyio
 async def test_query_reviewables_includes_flagged_ledger_entries(session):
     job = await _job(session)
-    await update_job(session, job_id=job.id, status_update="complete")
+    await update_job(
+        session, job_id=job.id, status_update="complete", attempts_update=1
+    )
     await write_entry(
         session,
         job.id,
@@ -238,6 +250,7 @@ async def test_query_reviewables_includes_extraction_failed_jobs_with_no_entry(s
         session,
         job_id=job.id,
         status_update="extraction_failed",
+        attempts_update=1,
         error_update="no invoice",
     )
 
@@ -250,28 +263,57 @@ async def test_query_reviewables_includes_extraction_failed_jobs_with_no_entry(s
 
 
 @pytest.mark.anyio
-async def test_query_reviewables_includes_errored_jobs(session):
+async def test_query_reviewables_excludes_errored_jobs(session):
+    # "error" jobs (Arq retries exhausted) have no invoice data to review/edit —
+    # they're surfaced separately via query_errored_jobs, not the review queue.
     job = await _job(session)
-    await update_job(session, job_id=job.id, status_update="error", error_update="boom")
+    await update_job(
+        session,
+        job_id=job.id,
+        status_update="error",
+        attempts_update=3,
+        error_update="boom",
+    )
 
     reviewables = await query_reviewables(session)
 
-    assert len(reviewables) == 1
-    returned_job, returned_entry = reviewables[0]
-    assert returned_job.id == job.id
-    assert returned_job.status == "error"
-    assert returned_entry is None
+    assert reviewables == []
+
+
+@pytest.mark.anyio
+async def test_query_errored_jobs_returns_only_error_status(session):
+    errored_job = await _job(session, "errored.png")
+    await update_job(
+        session,
+        job_id=errored_job.id,
+        status_update="error",
+        attempts_update=3,
+        error_update="boom",
+    )
+    other_job = await _job(session, "pending.png")
+
+    errored = await query_errored_jobs(session)
+
+    errored_ids = {job.id for job in errored}
+    assert errored_ids == {errored_job.id}
+    assert other_job.id not in errored_ids
 
 
 @pytest.mark.anyio
 async def test_query_resolved_ledger_excludes_pending_and_errored_jobs(session):
     clean_job = await _job(session, "clean.png")
-    await update_job(session, job_id=clean_job.id, status_update="complete")
+    await update_job(
+        session, job_id=clean_job.id, status_update="complete", attempts_update=1
+    )
     await write_entry(session, clean_job.id, _invoice(), needs_review=False)
 
     failed_job = await _job(session, "failed.png")
     await update_job(
-        session, job_id=failed_job.id, status_update="error", error_update="boom"
+        session,
+        job_id=failed_job.id,
+        status_update="error",
+        attempts_update=3,
+        error_update="boom",
     )
 
     await _job(session, "pending.png")

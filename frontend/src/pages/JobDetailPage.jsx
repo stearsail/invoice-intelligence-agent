@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getJobDetail, getJobImageUrl } from '../lib/api'
-import { CATEGORY_STYLES, toFormInvoice } from '../lib/invoiceForm'
+import { CATEGORY_STYLES, friendlyIssueMessage, toFormInvoice } from '../lib/invoiceForm'
 
 const labelClass = 'block text-xs font-medium text-muted mb-1'
 
@@ -83,12 +83,13 @@ export default function JobDetailPage() {
                       {reviewInfo.reviewReason.map((issue, idx) => (
                         <li
                           key={idx}
+                          title={issue.message}
                           className={CATEGORY_STYLES[issue.category] || 'text-body'}
                         >
                           <span className="text-xs font-medium uppercase opacity-70">
                             {issue.category}
                           </span>{' '}
-                          — {issue.message}
+                          — {friendlyIssueMessage(issue)}
                         </li>
                       ))}
                     </ul>
@@ -156,7 +157,7 @@ export default function JobDetailPage() {
             </table>
           </div>
 
-          <div className="grid grid-cols-5 gap-4 border-t border-edge pt-3">
+          <div className="grid grid-cols-5 gap-4 pt-3">
             <ReadOnlyField label="Currency" value={form.currency} />
             <ReadOnlyField label="Subtotal" value={form.subtotal} />
             <ReadOnlyField label="Tax" value={form.tax} />

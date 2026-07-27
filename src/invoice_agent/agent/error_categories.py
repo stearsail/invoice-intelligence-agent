@@ -1,5 +1,6 @@
 import anthropic
 import openai
+from pydantic import ValidationError
 
 # exceptions worth retrying the identical call for — network issues where a later attempt might succeed
 _RETRYABLE_EXCEPTIONS = (
@@ -26,4 +27,6 @@ def categorize_error(exc: Exception) -> str:
         return "connectivity"
     if isinstance(exc, FileNotFoundError):
         return "missing_file"
+    if isinstance(exc, ValidationError):
+        return "invalid_output"
     return "unknown"

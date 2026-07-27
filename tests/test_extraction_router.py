@@ -1,12 +1,12 @@
 import io
+from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException, UploadFile
+from fastapi import HTTPException, UploadFile
 from starlette.datastructures import Headers
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from unittest.mock import AsyncMock
 
 from invoice_agent.api.routers import extraction
 
@@ -36,13 +36,12 @@ def _upload_file(name: str, content_type: str = "image/png") -> UploadFile:
 
 
 @pytest.mark.anyio
-async def test_upload_creates_one_job_per_file(in_memory_session_factory, monkeypatch):
-    monkeypatch.setattr(extraction, "run_extraction_batch", AsyncMock())
+async def test_upload_creates_one_job_per_file(in_memory_session_factory):
     files = [_upload_file("a.png"), _upload_file("b.png"), _upload_file("c.png")]
 
     async with in_memory_session_factory() as session:
         responses = await extraction.upload(
-            files=files, background_tasks=BackgroundTasks(), session=session
+            files=files, session=session, pool=AsyncMock()
         )
 
     assert len(responses) == 3
@@ -51,31 +50,24 @@ async def test_upload_creates_one_job_per_file(in_memory_session_factory, monkey
 
 
 @pytest.mark.anyio
-async def test_upload_schedules_batch_with_every_created_job(
-    in_memory_session_factory, monkeypatch
-):
-    fake_batch = AsyncMock()
-    monkeypatch.setattr(extraction, "run_extraction_batch", fake_batch)
+async def test_upload_enqueues_a_job_for_every_created_job(in_memory_session_factory):
+    pool = AsyncMock()
     files = [_upload_file("a.png"), _upload_file("b.png")]
-    background_tasks = BackgroundTasks()
 
     async with in_memory_session_factory() as session:
-        responses = await extraction.upload(
-            files=files, background_tasks=background_tasks, session=session
-        )
-    await background_tasks()
+        responses = await extraction.upload(files=files, session=session, pool=pool)
 
-    scheduled_job_ids = {job_id for job_id, _ in fake_batch.await_args.args[0]}
-    assert scheduled_job_ids == {r.job_id for r in responses}
+    enqueued_job_ids = {call.args[1] for call in pool.enqueue_job.await_args_list}
+    assert enqueued_job_ids == {r.job_id for r in responses}
+    assert all(
+        call.args[0] == "process_job" for call in pool.enqueue_job.await_args_list
+    )
 
 
 @pytest.mark.anyio
-async def test_upload_rejects_invalid_file_type(in_memory_session_factory, monkeypatch):
-    monkeypatch.setattr(extraction, "run_extraction_batch", AsyncMock())
+async def test_upload_rejects_invalid_file_type(in_memory_session_factory):
     files = [_upload_file("a.png"), _upload_file("doc.txt", content_type="text/plain")]
 
     with pytest.raises(HTTPException):
         async with in_memory_session_factory() as session:
-            await extraction.upload(
-                files=files, background_tasks=BackgroundTasks(), session=session
-            )
+            await extraction.upload(files=files, session=session, pool=AsyncMock())
