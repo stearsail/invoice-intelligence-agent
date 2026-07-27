@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from invoice_agent.schema import Invoice
+from invoice_pipeline.schema import Invoice
 
 FULL_INVOICE = {
     "document_type": "invoice",

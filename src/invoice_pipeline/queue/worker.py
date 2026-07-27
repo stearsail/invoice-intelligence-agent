@@ -1,11 +1,11 @@
 from arq import Retry
 from arq.connections import RedisSettings
-from invoice_agent import config
+from invoice_pipeline import config
 import logging
-from invoice_agent.agent.runner import run_extraction
-from invoice_agent.db.engine import session_factory
-from invoice_agent.db.operations import update_job
-from invoice_agent.config import UPLOADS_DIR
+from invoice_pipeline.workflow.runner import run_extraction
+from invoice_pipeline.db.engine import session_factory
+from invoice_pipeline.db.operations import update_job
+from invoice_pipeline.config import UPLOADS_DIR
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # Importing invoice_agent.agent constructs the extractor clients at module
+      # Importing invoice_pipeline.workflow constructs the extractor clients at module
       # level, so these must be present for collection — no real calls are made.
       POSTGRES_PASSWORD: dummy
       POSTGRES_HOST: localhost

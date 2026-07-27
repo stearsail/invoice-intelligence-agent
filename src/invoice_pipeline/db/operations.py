@@ -1,7 +1,7 @@
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import or_, select
-from invoice_agent.db.models import Job, LedgerEntry
-from invoice_agent.schema import Invoice
+from invoice_pipeline.db.models import Job, LedgerEntry
+from invoice_pipeline.schema import Invoice
 
 
 async def create_job(session: AsyncSession, file_key: str) -> Job:

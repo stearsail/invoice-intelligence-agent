@@ -1,6 +1,6 @@
 from typing_extensions import Literal, TypedDict
-from invoice_agent.schema import Invoice
-from invoice_agent.reconciliation import ReconciliationIssue
+from invoice_pipeline.schema import Invoice
+from invoice_pipeline.reconciliation import ReconciliationIssue
 
 
 class State(TypedDict):

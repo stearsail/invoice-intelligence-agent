@@ -1,7 +1,7 @@
 from functools import partial
-from invoice_agent.agent.extractors import FrontierExtractor, SpecialistExtractor
+from invoice_pipeline.workflow.extractors import FrontierExtractor, SpecialistExtractor
 from langgraph.graph import END, START, StateGraph
-from invoice_agent.agent.nodes import (
+from invoice_pipeline.workflow.nodes import (
     frontier_extract,
     frontier_review_fallback,
     ledger_write,
@@ -10,8 +10,8 @@ from invoice_agent.agent.nodes import (
     specialist_extract,
     validate_reconcile,
 )
-from invoice_agent.agent.state import Context, State
-from invoice_agent.config import (
+from invoice_pipeline.workflow.state import Context, State
+from invoice_pipeline.config import (
     FRONTIER_MODEL,
     SPECIALIST_MODEL,
     VLLM_API_KEY,

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 PROJECT_ROOT = (
     Path(__file__).resolve().parents[2]
-)  # src/invoice_agent/ -> src/ -> repo root
+)  # src/invoice_pipeline/ -> src/ -> repo root
 
 # LOCAL STORAGE FOR PROJECT SCOPE, NO S3/R2
 UPLOADS_DIR = PROJECT_ROOT / "data" / "uploads"

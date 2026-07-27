@@ -18,4 +18,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-CMD ["fastapi", "run", "src/invoice_agent/api/main.py", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["fastapi", "run", "src/invoice_pipeline/api/main.py", "--host", "0.0.0.0", "--port", "8001"]

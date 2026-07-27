@@ -1,8 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
 
-from invoice_agent.api.routers.ledger import _to_response
-from invoice_agent.db.models import Job, LedgerEntry
+from invoice_pipeline.api.routers.ledger import _to_response
+from invoice_pipeline.db.models import Job, LedgerEntry
 
 
 def _job(**overrides) -> Job:

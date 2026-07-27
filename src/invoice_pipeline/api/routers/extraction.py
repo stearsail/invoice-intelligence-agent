@@ -1,15 +1,15 @@
 from arq import ArqRedis
-from invoice_agent.queue.pool import get_redis_pool
+from invoice_pipeline.queue.pool import get_redis_pool
 import uuid
 import aiofiles
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
-from invoice_agent.api.schema.responses import JobCreationResponse
-from invoice_agent.db.engine import get_async_session
-from invoice_agent.db.operations import create_job, query_job
-from invoice_agent.config import UPLOADS_DIR
+from invoice_pipeline.api.schema.responses import JobCreationResponse
+from invoice_pipeline.db.engine import get_async_session
+from invoice_pipeline.db.operations import create_job, query_job
+from invoice_pipeline.config import UPLOADS_DIR
 
 
 router = APIRouter(prefix="/extraction", tags=["extraction"])

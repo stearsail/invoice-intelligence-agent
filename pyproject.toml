@@ -1,7 +1,7 @@
 [project]
-name = "invoice-agent"
+name = "invoice-pipeline"
 version = "0.1.0"
-description = "An invoice-processing agent: a fine-tuned small LLM (served via vLLM) extracts structured data from invoices/receipts, wrapped in a Pydantic AI agent with validation, fallback to a frontier model, a ledger, and observability."
+description = "An invoice-processing pipeline: a fine-tuned small vision-language model (served via vLLM) extracts structured data from invoices/receipts, with validation, reconciliation, fallback to a frontier model, and a reviewable ledger."
 readme = "README.md"
 authors = [
     { name = "Stephen", email = "stearsail@gmail.com" }
@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [project.scripts]
-invoice-agent = "invoice_agent:main"
+invoice-pipeline = "invoice_pipeline:main"
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
@@ -51,7 +51,7 @@ train = [
 ]
 
 [tool.fastapi]
-entrypoint = "invoice_agent.api.main:app"
+entrypoint = "invoice_pipeline.api.main:app"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -6,9 +6,9 @@ import httpx
 import openai
 import pytest
 
-from invoice_agent.agent import extractors
-from invoice_agent.agent.extractors import FrontierExtractor, SpecialistExtractor
-from invoice_agent.schema import Invoice, LineItem
+from invoice_pipeline.workflow import extractors
+from invoice_pipeline.workflow.extractors import FrontierExtractor, SpecialistExtractor
+from invoice_pipeline.schema import Invoice, LineItem
 
 
 def _invoice(**overrides) -> Invoice:

@@ -3,10 +3,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from invoice_agent.agent import nodes
-from invoice_agent.agent.extractors import ExtractionResult
-from invoice_agent.agent.graph import build_graph
-from invoice_agent.schema import Invoice, LineItem
+from invoice_pipeline.workflow import nodes
+from invoice_pipeline.workflow.extractors import ExtractionResult
+from invoice_pipeline.workflow.graph import build_graph
+from invoice_pipeline.schema import Invoice, LineItem
 
 
 def _invoice(**overrides) -> Invoice:

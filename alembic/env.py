@@ -5,10 +5,10 @@ from sqlalchemy import pool
 
 from alembic import context
 from sqlmodel import SQLModel
-from invoice_agent.db.models import LedgerEntry  # noqa: F401
+from invoice_pipeline.db.models import LedgerEntry  # noqa: F401
 
 # LedgerEntry must be imported to trigger SQLModel to register the table onto SQLModel.metadata
-from invoice_agent.db.engine import db_url
+from invoice_pipeline.db.engine import db_url
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -1,9 +1,9 @@
 import asyncio
 from dataclasses import dataclass
 import logging
-from invoice_agent.agent.error_categories import categorize_error
-from invoice_agent.agent.images import load_image_b64
-from invoice_agent.schema import Invoice
+from invoice_pipeline.workflow.error_categories import categorize_error
+from invoice_pipeline.workflow.images import load_image_b64
+from invoice_pipeline.schema import Invoice
 from langchain_anthropic import ChatAnthropic
 from openai import AsyncOpenAI
 

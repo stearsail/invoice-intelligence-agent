@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from invoice_agent.agent import graph
+from invoice_pipeline.workflow import graph
 
 
 def tally_extractions(results: list) -> dict:

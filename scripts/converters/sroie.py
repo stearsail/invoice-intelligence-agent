@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, date
 from decimal import Decimal
-from invoice_agent.schema import Invoice, Party
+from invoice_pipeline.schema import Invoice, Party
 
 _TAG_RE = re.compile(r"<s_(\w+)>(.*?)</s_\1>", re.DOTALL)
 

@@ -1,11 +1,11 @@
 from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from invoice_agent import config
-from invoice_agent.api.routers.extraction import router as extraction_router
-from invoice_agent.api.routers.ledger import router as ledger_router
+from invoice_pipeline import config
+from invoice_pipeline.api.routers.extraction import router as extraction_router
+from invoice_pipeline.api.routers.ledger import router as ledger_router
 from contextlib import asynccontextmanager
-from invoice_agent.logging_config import setup_logging
+from invoice_pipeline.logging_config import setup_logging
 from arq import create_pool
 
 setup_logging()

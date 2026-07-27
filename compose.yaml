@@ -1,3 +1,4 @@
+name: invoice_pipeline
 volumes:
   pgdata:
   redis-data:
@@ -32,7 +33,7 @@ services:
     build: .
     volumes:
       - ./data/uploads:/app/data/uploads
-    command: arq invoice_agent.queue.worker.WorkerSettings
+    command: arq invoice_pipeline.queue.worker.WorkerSettings
     environment:
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from invoice_agent.db.operations import (
+from invoice_pipeline.db.operations import (
     create_job,
     find_duplicate,
     query_errored_jobs,
@@ -16,7 +16,7 @@ from invoice_agent.db.operations import (
     update_job,
     write_entry,
 )
-from invoice_agent.schema import Invoice, Party
+from invoice_pipeline.schema import Invoice, Party
 
 
 @pytest.fixture

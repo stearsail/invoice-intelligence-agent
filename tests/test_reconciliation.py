@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from invoice_agent.reconciliation import reconcile
-from invoice_agent.schema import Invoice, LineItem
+from invoice_pipeline.reconciliation import reconcile
+from invoice_pipeline.schema import Invoice, LineItem
 
 
 def _invoice(**overrides) -> Invoice:

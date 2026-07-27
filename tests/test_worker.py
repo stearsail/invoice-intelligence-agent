@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from invoice_agent.agent.runner import ExtractionResult
-from invoice_agent.db.operations import create_job, query_job
-from invoice_agent.queue import worker
+from invoice_pipeline.workflow.runner import ExtractionResult
+from invoice_pipeline.db.operations import create_job, query_job
+from invoice_pipeline.queue import worker
 
 
 @pytest.fixture

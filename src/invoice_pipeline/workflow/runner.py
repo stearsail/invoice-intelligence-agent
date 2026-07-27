@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from invoice_agent.agent import graph
+from invoice_pipeline.workflow import graph
 from typing_extensions import Literal
 
 

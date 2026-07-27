@@ -3,15 +3,15 @@ from fastapi import APIRouter, HTTPException, Depends
 import logging
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
-from invoice_agent.api.schema.responses import (
+from invoice_pipeline.api.schema.responses import (
     ErroredJobResponse,
     LedgerEntryResponse,
     JobEntryPairResponse,
     PendingJobResponse,
 )
-from invoice_agent.db.engine import get_async_session
-from invoice_agent.db.models import Job, LedgerEntry
-from invoice_agent.db.operations import (
+from invoice_pipeline.db.engine import get_async_session
+from invoice_pipeline.db.models import Job, LedgerEntry
+from invoice_pipeline.db.operations import (
     delete_job_entry,
     query_errored_jobs,
     query_job,
@@ -23,8 +23,8 @@ from invoice_agent.db.operations import (
     update_job,
     write_entry,
 )
-from invoice_agent.queue.pool import get_redis_pool
-from invoice_agent.schema import Invoice
+from invoice_pipeline.queue.pool import get_redis_pool
+from invoice_pipeline.schema import Invoice
 
 
 logger = logging.getLogger(__name__)

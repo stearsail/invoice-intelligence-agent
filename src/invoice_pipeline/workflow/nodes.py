@@ -1,8 +1,8 @@
-from invoice_agent.agent.extractors import FrontierExtractor, SpecialistExtractor
-from invoice_agent.agent.state import State
-from invoice_agent.db.operations import find_duplicate, write_entry
-from invoice_agent.reconciliation import ReconciliationIssue, reconcile
-from invoice_agent.db.engine import session_factory
+from invoice_pipeline.workflow.extractors import FrontierExtractor, SpecialistExtractor
+from invoice_pipeline.workflow.state import State
+from invoice_pipeline.db.operations import find_duplicate, write_entry
+from invoice_pipeline.reconciliation import ReconciliationIssue, reconcile
+from invoice_pipeline.db.engine import session_factory
 
 
 async def specialist_extract(specialist: SpecialistExtractor, state: State) -> dict:

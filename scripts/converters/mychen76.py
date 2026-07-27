@@ -3,7 +3,7 @@ import json
 import re
 from datetime import datetime, date
 from decimal import Decimal
-from invoice_agent.schema import Invoice, Party, LineItem
+from invoice_pipeline.schema import Invoice, Party, LineItem
 
 
 def _parse_annotation(parsed_data: str) -> dict:

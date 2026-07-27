@@ -1,8 +1,8 @@
 from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
-from invoice_agent.schema import Invoice
-from invoice_agent.reconciliation import ReconciliationIssue
+from invoice_pipeline.schema import Invoice
+from invoice_pipeline.reconciliation import ReconciliationIssue
 
 
 class JobCreationResponse(BaseModel):

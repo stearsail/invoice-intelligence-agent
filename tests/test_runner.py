@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from invoice_agent.agent import runner
-from invoice_agent.reconciliation import ReconciliationIssue
+from invoice_pipeline.workflow import runner
+from invoice_pipeline.reconciliation import ReconciliationIssue
 
 
 @pytest.fixture

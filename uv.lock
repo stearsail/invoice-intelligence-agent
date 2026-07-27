@@ -2157,7 +2157,7 @@ wheels = [
 ]
 
 [[package]]
-name = "invoice-agent"
+name = "invoice-pipeline"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
