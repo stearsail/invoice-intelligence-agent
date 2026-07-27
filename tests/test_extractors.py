@@ -1,6 +1,9 @@
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
+import anthropic
+import httpx
+import openai
 import pytest
 
 from invoice_agent.agent import extractors
@@ -35,6 +38,12 @@ def _fake_specialist_client(content: str) -> MagicMock:
     fake_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[choice])
     )
+    return fake_client
+
+
+def _fake_specialist_client_raising(exc: Exception) -> MagicMock:
+    fake_client = MagicMock()
+    fake_client.chat.completions.create = AsyncMock(side_effect=exc)
     return fake_client
 
 
@@ -91,7 +100,16 @@ async def test_specialist_reports_parse_error_on_invalid_json():
     result = await extractor.extract_invoice("fake.png")
 
     assert result.invoice is None
-    assert "Pydantic Validation error" in result.parse_error
+    assert result.parse_error.startswith("unknown:")
+
+
+@pytest.mark.anyio
+async def test_specialist_reraises_connectivity_errors_for_arq_retry():
+    exc = openai.APIConnectionError(request=httpx.Request("POST", "http://vllm.test"))
+    extractor = _specialist(_fake_specialist_client_raising(exc))
+
+    with pytest.raises(openai.APIConnectionError):
+        await extractor.extract_invoice("fake.png")
 
 
 @pytest.mark.anyio
@@ -123,7 +141,22 @@ async def test_frontier_reports_parse_error_when_call_raises():
     result = await extractor.extract_invoice("fake.png")
 
     assert result.invoice is None
-    assert "Frontier structured output error" in result.parse_error
+    assert result.parse_error.startswith("unknown:")
+
+
+@pytest.mark.anyio
+async def test_frontier_reraises_connectivity_errors_for_arq_retry():
+    exc = anthropic.APIConnectionError(
+        request=httpx.Request("POST", "http://anthropic.test")
+    )
+    structured = MagicMock()
+    structured.ainvoke = AsyncMock(side_effect=exc)
+    fake_client = MagicMock()
+    fake_client.with_structured_output.return_value = structured
+    extractor = _frontier(fake_client)
+
+    with pytest.raises(anthropic.APIConnectionError):
+        await extractor.extract_invoice("fake.png")
 
 
 @pytest.mark.anyio

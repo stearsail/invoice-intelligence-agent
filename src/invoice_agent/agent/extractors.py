@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from invoice_agent.agent.error_categories import categorize_error
 from invoice_agent.agent.images import load_image_b64
 from invoice_agent.schema import Invoice
 from langchain_anthropic import ChatAnthropic
@@ -34,26 +35,28 @@ class SpecialistExtractor:
     # Measure the malformed-output rate first — the specialist is fine-tuned on
     # this format, so the gain may not justify the second schema.
     async def extract_invoice(self, img_path: str) -> ExtractionResult:
-        img_b64 = await asyncio.to_thread(load_image_b64, img_path)
-        response = await self._client.chat.completions.create(
-            model=self._model_name,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "Extract structured data from this receipt/invoice image as JSON.",
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{img_b64}"},
-                        },
-                    ],
-                }
-            ],
-        )
         try:
+            img_b64 = await asyncio.to_thread(load_image_b64, img_path)
+            response = await self._client.chat.completions.create(
+                model=self._model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Extract structured data from this receipt/invoice image as JSON.",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{img_b64}"
+                                },
+                            },
+                        ],
+                    }
+                ],
+            )
             return ExtractionResult(
                 invoice=Invoice.model_validate_json(
                     response.choices[0].message.content
@@ -61,9 +64,10 @@ class SpecialistExtractor:
                 parse_error=None,
             )
         except Exception as e:
-            return ExtractionResult(
-                invoice=None, parse_error=f"Pydantic Validation error: {e}"
-            )
+            category = categorize_error(e)
+            if category == "connectivity":
+                raise
+            return ExtractionResult(invoice=None, parse_error=f"{category}: {e}")
 
 
 class FrontierExtractor:
@@ -80,30 +84,30 @@ class FrontierExtractor:
     async def extract_invoice(
         self, img_path: str, extra_context: str = ""
     ) -> ExtractionResult:
-        img_b64 = await asyncio.to_thread(load_image_b64, img_path)
-        message = {
-            "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": """Extract structured data from this receipt/invoice image as JSON. 
-                    Read the currency, number formatting, and locale directly from what's visible in the document 
-                    — do not assume any specific country's conventions."""
-                    + extra_context,
-                },
-                {
-                    "type": "image",
-                    "base64": img_b64,
-                    "mime_type": "image/png",
-                },
-            ],
-        }
-
-        structured_model = self._client.with_structured_output(Invoice)
         try:
+            img_b64 = await asyncio.to_thread(load_image_b64, img_path)
+            message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": """Extract structured data from this receipt/invoice image as JSON. 
+                        Read the currency, number formatting, and locale directly from what's visible in the document 
+                        — do not assume any specific country's conventions."""
+                        + extra_context,
+                    },
+                    {
+                        "type": "image",
+                        "base64": img_b64,
+                        "mime_type": "image/png",
+                    },
+                ],
+            }
+            structured_model = self._client.with_structured_output(Invoice)
             invoice = await structured_model.ainvoke([message])
             return ExtractionResult(invoice=invoice, parse_error=None)
         except Exception as e:
-            return ExtractionResult(
-                invoice=None, parse_error=f"Frontier structured output error: {e}"
-            )
+            category = categorize_error(e)
+            if category == "connectivity":
+                raise
+            return ExtractionResult(invoice=None, parse_error=f"{category}: {e}")

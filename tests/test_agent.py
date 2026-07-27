@@ -144,7 +144,7 @@ async def test_both_specialist_and_frontier_extraction_fail_skips_ledger_write(
     assert result["reconciliation_issues"][0].category == "unverifiable"
     assert (
         result["reconciliation_issues"][0].message
-        == "Extraction failed entirely — no invoice to reconcile"
+        == "Extraction failed entirely — Frontier structured output error: frontier boom"
     )
     # total failure routes straight to END — nothing to write, no ledger entry created
     assert no_real_ledger == []

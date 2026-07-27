@@ -31,7 +31,7 @@ async def validate_reconcile(state: State) -> dict:
             "reconciliation_issues": [
                 ReconciliationIssue(
                     category="unverifiable",
-                    message="Extraction failed entirely — no invoice to reconcile",
+                    message=f"Extraction failed entirely — {state['parse_error']}",
                 )
             ]
         }

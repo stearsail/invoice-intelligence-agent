@@ -24,18 +24,22 @@ class LedgerEntryResponse(BaseModel):
     review_reason: list[ReconciliationIssue] | None
 
 
-class PendingJobResponse(BaseModel):
-    job_id: int
-    created_at: datetime
-    status: str
-    attempts: int
-
-
-class JobEntryPairResponse(BaseModel):
+class JobResponse(BaseModel):
     job_id: int
     created_at: datetime
     status: str
     error: str | None
     attempts: int
+
+
+class JobEntryPairResponse(JobResponse):
     ledger_entry: LedgerEntryResponse | None
     ledger_entry_error: str | None = None
+
+
+class PendingJobResponse(JobResponse):
+    pass
+
+
+class ErroredJobResponse(JobResponse):
+    pass

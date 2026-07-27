@@ -41,7 +41,7 @@ async def process_job(ctx, job_id, file_key):
                     error_update=str(e),
                     attempts_update=ctx["job_try"],
                 )
-            raise Retry(defer=ctx["job_try"] * 10)
+            raise Retry(defer=ctx["job_try"] * 20)
         else:
             logger.exception("Extraction job %s failed permanently", job_id)
             await _set_status(

@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadImages, getPendingJobs } from '../lib/api'
+import {
+  uploadImages,
+  getPendingJobs,
+  getErroredJobs,
+  retryJob,
+  deleteJob,
+  getJobImageUrl,
+} from '../lib/api'
 import { formatDateTime } from '../lib/format'
 import { StatusBadge } from '../components/JobTable'
+import Pagination from '../components/Pagination'
+
+const ERRORED_PAGE_SIZE = 20
 
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`
@@ -13,21 +23,91 @@ export default function UploadPage() {
   const [files, setFiles] = useState([])
   const [error, setError] = useState(null)
   const [pendingJobs, setPendingJobs] = useState(null)
+  const [erroredJobs, setErroredJobs] = useState(null)
+  const [busyJobId, setBusyJobId] = useState(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [erroredPage, setErroredPage] = useState(1)
   const fileInputRef = useRef(null)
 
-  async function loadPendingJobs() {
+  async function loadJobs() {
     try {
-      setPendingJobs(await getPendingJobs())
+      const [pending, errored] = await Promise.all([
+        getPendingJobs(),
+        getErroredJobs(),
+      ])
+      setPendingJobs(pending)
+      setErroredJobs(errored)
     } catch (err) {
       setError(err.message)
     }
   }
 
   useEffect(() => {
-    loadPendingJobs()
-    const interval = setInterval(loadPendingJobs, 2000)
+    loadJobs()
+    const interval = setInterval(loadJobs, 2000)
     return () => clearInterval(interval)
   }, [])
+
+  async function handleRetry(jobId) {
+    setBusyJobId(jobId)
+    setError(null)
+    try {
+      await retryJob(jobId)
+      await loadJobs()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusyJobId(null)
+    }
+  }
+
+  async function handleDelete(jobId) {
+    if (!window.confirm(`Delete job ${jobId}? This cannot be undone.`)) return
+    setBusyJobId(jobId)
+    setError(null)
+    try {
+      await deleteJob(jobId)
+      await loadJobs()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusyJobId(null)
+    }
+  }
+
+  async function handleRetryAll() {
+    if (!erroredJobs || erroredJobs.length === 0) return
+    setBulkBusy(true)
+    setError(null)
+    try {
+      await Promise.all(erroredJobs.map((item) => retryJob(item.job_id)))
+      await loadJobs()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  async function handleDeleteAll() {
+    if (!erroredJobs || erroredJobs.length === 0) return
+    if (
+      !window.confirm(
+        `Delete all ${erroredJobs.length} errored jobs? This cannot be undone.`
+      )
+    )
+      return
+    setBulkBusy(true)
+    setError(null)
+    try {
+      await Promise.all(erroredJobs.map((item) => deleteJob(item.job_id)))
+      await loadJobs()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   function addFiles(fileList) {
     setFiles((prev) => {
@@ -52,13 +132,24 @@ export default function UploadPage() {
     try {
       await uploadImages(files)
       setFiles([])
-      loadPendingJobs()
+      loadJobs()
     } catch (err) {
       setError(err.message)
     }
   }
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0)
+
+  const erroredTotalPages = erroredJobs
+    ? Math.max(1, Math.ceil(erroredJobs.length / ERRORED_PAGE_SIZE))
+    : 1
+  const erroredCurrentPage = Math.min(erroredPage, erroredTotalPages)
+  const erroredPageItems = erroredJobs
+    ? erroredJobs.slice(
+        (erroredCurrentPage - 1) * ERRORED_PAGE_SIZE,
+        erroredCurrentPage * ERRORED_PAGE_SIZE
+      )
+    : null
 
   return (
     <div className="mx-auto w-full px-[5%] py-10">
@@ -169,6 +260,85 @@ export default function UploadPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      <div className="mt-10 mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">
+          Errored jobs{erroredJobs && ` — ${erroredJobs.length}`}
+        </h2>
+        {erroredJobs && erroredJobs.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={handleRetryAll}
+              className="cursor-pointer rounded border border-accent px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {bulkBusy ? 'Working…' : 'Retry all'}
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy}
+              onClick={handleDeleteAll}
+              className="cursor-pointer rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {bulkBusy ? 'Working…' : 'Delete all'}
+            </button>
+          </div>
+        )}
+      </div>
+      {erroredJobs && erroredJobs.length === 0 && (
+        <p className="text-sm text-muted">Nothing has failed.</p>
+      )}
+      {erroredJobs && erroredJobs.length > 0 && (
+        <>
+          <ul className="divide-y divide-edge rounded border border-edge">
+            {erroredPageItems.map((item) => (
+              <li key={item.job_id} className="flex items-center gap-3 px-4 py-2 text-sm">
+                <a
+                  href={getJobImageUrl(item.job_id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0"
+                >
+                  <img
+                    src={getJobImageUrl(item.job_id)}
+                    alt={`Document for job ${item.job_id}`}
+                    loading="lazy"
+                    className="h-10 w-10 rounded border border-edge object-cover"
+                  />
+                </a>
+                <span className="font-medium">Job {item.job_id}</span>
+                <span className="text-muted">{formatDateTime(item.created_at)}</span>
+                <StatusBadge status={item.status} />
+                <span className="flex-1 truncate text-xs text-muted" title={item.error}>
+                  {item.error}
+                </span>
+                <button
+                  type="button"
+                  disabled={busyJobId === item.job_id || bulkBusy}
+                  onClick={() => handleRetry(item.job_id)}
+                  className="cursor-pointer rounded border border-accent px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  disabled={busyJobId === item.job_id || bulkBusy}
+                  onClick={() => handleDelete(item.job_id)}
+                  className="cursor-pointer rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Pagination
+            page={erroredCurrentPage}
+            totalPages={erroredTotalPages}
+            onPageChange={setErroredPage}
+          />
+        </>
       )}
     </div>
   )

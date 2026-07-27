@@ -1,8 +1,10 @@
+from arq import ArqRedis
 from fastapi import APIRouter, HTTPException, Depends
 import logging
 from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 from invoice_agent.api.schema.responses import (
+    ErroredJobResponse,
     LedgerEntryResponse,
     JobEntryPairResponse,
     PendingJobResponse,
@@ -11,6 +13,8 @@ from invoice_agent.db.engine import get_async_session
 from invoice_agent.db.models import Job, LedgerEntry
 from invoice_agent.db.operations import (
     delete_job_entry,
+    query_errored_jobs,
+    query_job,
     query_job_entry,
     query_pending_jobs,
     query_resolved_ledger,
@@ -19,6 +23,7 @@ from invoice_agent.db.operations import (
     update_job,
     write_entry,
 )
+from invoice_agent.queue.pool import get_redis_pool
 from invoice_agent.schema import Invoice
 
 
@@ -56,6 +61,17 @@ def _to_pending_response(job: Job) -> PendingJobResponse:
         job_id=job.id,
         created_at=job.created_at,
         status=job.status,
+        error=job.error,
+        attempts=job.attempts,
+    )
+
+
+def _to_errored_response(job: Job) -> ErroredJobResponse:
+    return ErroredJobResponse(
+        job_id=job.id,
+        created_at=job.created_at,
+        status=job.status,
+        error=job.error,
         attempts=job.attempts,
     )
 
@@ -89,6 +105,18 @@ async def get_pending_jobs(
     for job in results:
         pending.append(_to_pending_response(job))
     return pending
+
+
+@router.get("/errored")
+async def get_errored_jobs(
+    session: AsyncSession = Depends(get_async_session),
+) -> list[ErroredJobResponse]:
+    results = await query_errored_jobs(session)
+    responses = []
+    for job in results:
+        errored_job = _to_errored_response(job)
+        responses.append(errored_job)
+    return responses
 
 
 @router.get("/{job_id}", response_model=JobEntryPairResponse)
@@ -135,3 +163,27 @@ async def edit_job(
     else:
         entry = await update_entry(session=session, job_id=job_id, invoice=invoice)
     return _to_response(job, entry)
+
+
+@router.post("/{job_id}/retry", response_model=ErroredJobResponse)
+async def retry_job(
+    job_id: int,
+    session: AsyncSession = Depends(get_async_session),
+    pool: ArqRedis = Depends(get_redis_pool),
+) -> ErroredJobResponse:
+    job = await query_job(session, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if job.status != "error":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is not in an error state"
+        )
+    job = await update_job(
+        session,
+        job_id=job_id,
+        status_update="pending",
+        attempts_update=job.attempts,
+        error_update=None,
+    )
+    await pool.enqueue_job("process_job", job.id, job.file_key)
+    return _to_errored_response(job)

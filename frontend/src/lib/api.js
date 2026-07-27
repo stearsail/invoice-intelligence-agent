@@ -35,6 +35,10 @@ export function getPendingJobs() {
   return request('/ledger/pending')
 }
 
+export function getErroredJobs() {
+  return request('/ledger/errored')
+}
+
 export function getJobDetail(jobId) {
   return request(`/ledger/${jobId}`)
 }

@@ -115,12 +115,9 @@ async def query_reviewables(session: AsyncSession) -> list[(Job, LedgerEntry | N
     statement = (
         select(Job, LedgerEntry)
         .join(LedgerEntry, onclause=LedgerEntry.job_id == Job.id, isouter=True)
-        .where(
-            or_(
-                Job.status.in_(["extraction_failed", "error"]), LedgerEntry.needs_review
-            )
-        )
+        .where(or_(Job.status == "extraction_failed", LedgerEntry.needs_review))
     )
+
     results = await session.exec(statement)
     reviewables = []
     for row in results:
@@ -146,6 +143,12 @@ async def query_resolved_ledger(
 
 async def query_pending_jobs(session: AsyncSession) -> list[Job]:
     statement = select(Job).where(Job.status.in_(["pending", "retrying"]))
+    results = await session.exec(statement)
+    return results
+
+
+async def query_errored_jobs(session: AsyncSession) -> list[Job]:
+    statement = select(Job).where(Job.status == "error")
     results = await session.exec(statement)
     return results
 
