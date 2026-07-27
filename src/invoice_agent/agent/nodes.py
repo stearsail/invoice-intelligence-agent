@@ -72,26 +72,21 @@ def route_after_parsing(state: State) -> str:
 def route_after_reconcile(state: State) -> str:
     if state["invoice"] is None:
         return "total_failure"
-    if not state["reconciliation_issues"]:
-        return "reconciled"
-    elif state["attempt"] == "frontier":
-        return "needs_human_review"
-    return "needs_review"
+    if state["reconciliation_issues"] and state["attempt"] == "specialist":
+        return "retry_via_frontier"
+    return "reconciled"
 
 
 async def ledger_write(state: State) -> dict:
-    needs_review = bool(state["reconciliation_issues"])
-    review_reason = (
-        [issue.model_dump() for issue in state["reconciliation_issues"]]
-        if needs_review
-        else None
-    )
+    # every extraction needs human verification — reconciliation issues are informational
+    # needs_review flips to false when a verifier saves the entry (update_entry)
+    review_reason = [issue.model_dump() for issue in state["reconciliation_issues"]]
     async with session_factory() as session:
         entry = await write_entry(
             session,
             state["job_id"],
             state["invoice"],
-            needs_review=needs_review,
+            needs_review=True,
             review_reason=review_reason,
         )
     return {"ledger_entry_id": entry.id}

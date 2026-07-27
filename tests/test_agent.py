@@ -106,7 +106,10 @@ async def test_specialist_success_reconciles_and_writes_ledger(no_real_ledger):
     assert result["attempt"] == "specialist"
     assert result["reconciliation_issues"] == []
     assert len(no_real_ledger) == 1
-    assert no_real_ledger[0]["needs_review"] is False
+    # Every entry gets a human confirmation pass, even a clean reconciliation —
+    # needs_review only flips to False once a verifier actually saves it.
+    assert no_real_ledger[0]["needs_review"] is True
+    assert no_real_ledger[0]["review_reason"] == []
     assert no_real_ledger[0]["job_id"] == 1
 
 
@@ -125,7 +128,7 @@ async def test_specialist_parse_failure_falls_back_to_frontier_and_succeeds(
     assert result["reconciliation_issues"] == []
     assert len(frontier.calls) == 1
     assert len(no_real_ledger) == 1
-    assert no_real_ledger[0]["needs_review"] is False
+    assert no_real_ledger[0]["needs_review"] is True
 
 
 @pytest.mark.anyio
@@ -164,7 +167,7 @@ async def test_specialist_reconciliation_failure_retries_via_frontier_and_resolv
     assert result["attempt"] == "frontier"
     assert result["reconciliation_issues"] == []
     assert len(no_real_ledger) == 1
-    assert no_real_ledger[0]["needs_review"] is False
+    assert no_real_ledger[0]["needs_review"] is True
 
 
 @pytest.mark.anyio

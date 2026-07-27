@@ -1,9 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
-from scripts.training_data import convert_to_conversation, load_jsonl_data
+pytest.importorskip("torch")
+
+from scripts.training_data import convert_to_conversation, load_jsonl_data  # noqa: E402
 
 
 def test_convert_to_conversation_builds_expected_structure(tmp_path: Path):

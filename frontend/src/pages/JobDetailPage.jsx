@@ -67,8 +67,8 @@ export default function JobDetailPage() {
   }
 
   return (
-    <div className="mx-auto w-full px-[1%]">
-      <div className="grid grid-cols-2 gap-4 bg-surface p-2">
+    <div className="mx-auto min-h-screen w-full px-[1%] bg-surface">
+      <div className="grid grid-cols-2 gap-4 p-2">
         <div className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-5">
           <div>
             {reviewInfo &&

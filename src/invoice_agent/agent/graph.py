@@ -45,9 +45,8 @@ def build_graph(specialist: SpecialistExtractor, frontier: FrontierExtractor):
         "validate_reconcile",
         route_after_reconcile,
         {
-            "needs_review": "frontier_review_fallback",
+            "retry_via_frontier": "frontier_review_fallback",
             "reconciled": "ledger_write",
-            "needs_human_review": "ledger_write",
             "total_failure": END,
         },
     )
