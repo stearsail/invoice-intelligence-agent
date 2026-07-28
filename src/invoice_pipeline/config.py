@@ -9,7 +9,6 @@ PROJECT_ROOT = (
 # LOCAL STORAGE FOR PROJECT SCOPE, NO S3/R2
 UPLOADS_DIR = PROJECT_ROOT / "data" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-MAX_CONCURRENCY = 16
 
 load_dotenv(PROJECT_ROOT / ".env")
 VLLM_BASE_URL = os.environ.get("VLLM_BASE_URL")

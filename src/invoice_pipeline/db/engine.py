@@ -18,7 +18,7 @@ if not POSTGRES_HOST:
 POSTGRES_PORT = os.environ.get("POSTGRES_PORT", "5432")
 
 db_url = f"postgresql+psycopg://postgres:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/invoice_ledger"
-engine = create_async_engine(db_url, echo=True)
+engine = create_async_engine(db_url, echo=False)
 session_factory = async_sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )

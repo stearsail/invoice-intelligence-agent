@@ -150,7 +150,10 @@ async def delete_job_by_id(
 async def edit_job(
     job_id: int, invoice: Invoice, session: AsyncSession = Depends(get_async_session)
 ) -> JobEntryPairResponse:
-    job, entry = await query_job_entry(session, job_id)
+    result = await query_job_entry(session, job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    job, entry = result
     if entry is None:
         entry = await write_entry(
             session=session,
@@ -159,7 +162,12 @@ async def edit_job(
             needs_review=False,
             review_reason=None,
         )
-        job = await update_job(session=session, job_id=job_id, status_update="complete")
+        job = await update_job(
+            session=session,
+            job_id=job_id,
+            status_update="complete",
+            attempts_update=job.attempts,
+        )
     else:
         entry = await update_entry(session=session, job_id=job_id, invoice=invoice)
     return _to_response(job, entry)

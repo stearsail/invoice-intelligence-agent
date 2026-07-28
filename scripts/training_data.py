@@ -3,7 +3,7 @@ from pathlib import Path
 from PIL import Image
 from torch.utils.data import Dataset
 
-_INSTRUCTION = "This is the image of a business document. Invoice / receipt — extract the information from within it."
+_INSTRUCTION = "Extract structured data from this receipt/invoice image as JSON."
 
 
 class JsonlImageDataset(Dataset):

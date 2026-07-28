@@ -1,8 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
 
-from invoice_pipeline.api.routers.ledger import _to_response
+import pytest
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from invoice_pipeline.api.routers.ledger import _to_response, edit_job
 from invoice_pipeline.db.models import Job, LedgerEntry
+from invoice_pipeline.db.operations import create_job, update_job, write_entry
+from invoice_pipeline.schema import Invoice
 
 
 def _job(**overrides) -> Job:
@@ -81,3 +89,110 @@ def test_to_response_degrades_gracefully_on_corrupt_invoice_data():
     assert response.ledger_entry is None
     assert response.ledger_entry_error is not None
     assert "document_type" in response.ledger_entry_error
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+async def session():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with session_factory() as s:
+        yield s
+    await engine.dispose()
+
+
+def _invoice(**overrides) -> Invoice:
+    defaults = {
+        "document_type": "receipt",
+        "currency": "USD",
+        "grand_total": Decimal("10.00"),
+    }
+    defaults.update(overrides)
+    return Invoice(**defaults)
+
+
+async def _failed_job(session, attempts: int = 2, error: str = "boom") -> Job:
+    """A job whose extraction produced no invoice — so no ledger entry exists."""
+    job = await create_job(session, file_key="a1b2c3d4.png")
+    await update_job(
+        session,
+        job_id=job.id,
+        status_update="extraction_failed",
+        attempts_update=attempts,
+        error_update=error,
+    )
+    return job
+
+
+@pytest.mark.anyio
+async def test_edit_job_on_failed_job_writes_a_confirmed_entry(session):
+    job = await _failed_job(session)
+
+    response = await edit_job(job_id=job.id, invoice=_invoice(), session=session)
+
+    assert response.status == "complete"
+    assert response.ledger_entry is not None
+    assert response.ledger_entry.needs_review is False
+    assert response.ledger_entry.review_reason is None
+
+
+@pytest.mark.anyio
+async def test_edit_job_on_failed_job_preserves_the_worker_attempt_count(session):
+    # attempts is owned by the worker (arq's job_try); a human edit must not reset it
+    job = await _failed_job(session, attempts=3)
+
+    response = await edit_job(job_id=job.id, invoice=_invoice(), session=session)
+
+    assert response.attempts == 3
+
+
+@pytest.mark.anyio
+async def test_edit_job_on_failed_job_clears_the_stale_error(session):
+    job = await _failed_job(session, error="Extraction failed entirely — timeout")
+
+    response = await edit_job(job_id=job.id, invoice=_invoice(), session=session)
+
+    assert response.error is None
+
+
+@pytest.mark.anyio
+async def test_edit_job_on_flagged_entry_corrects_it_and_clears_review(session):
+    job = await create_job(session, file_key="b2c3d4e5.png")
+    await update_job(
+        session, job_id=job.id, status_update="complete", attempts_update=1
+    )
+    original = await write_entry(
+        session,
+        job.id,
+        _invoice(),
+        needs_review=True,
+        review_reason=[{"category": "mismatch", "message": "Line items sum to 9.00"}],
+    )
+
+    corrected = _invoice(invoice_number="INV-42", grand_total=Decimal("99.99"))
+    response = await edit_job(job_id=job.id, invoice=corrected, session=session)
+
+    assert response.ledger_entry is not None
+    # updated in place rather than appending a second entry for the same job
+    assert response.ledger_entry.id == original.id
+    assert response.ledger_entry.needs_review is False
+    assert response.ledger_entry.review_reason is None
+    assert response.ledger_entry.grand_total == Decimal("99.99")
+    assert response.ledger_entry.invoice_data.invoice_number == "INV-42"
+
+
+@pytest.mark.anyio
+async def test_edit_job_raises_404_for_unknown_job(session):
+    with pytest.raises(HTTPException) as exc_info:
+        await edit_job(job_id=999, invoice=_invoice(), session=session)
+
+    assert exc_info.value.status_code == 404
+    assert "999" in exc_info.value.detail
