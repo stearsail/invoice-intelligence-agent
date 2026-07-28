@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getJobDetail, getJobImageUrl } from '../lib/api'
-import { CATEGORY_STYLES, friendlyIssueMessage, toFormInvoice } from '../lib/invoiceForm'
+import {
+  CATEGORY_STYLES,
+  friendlyIssueMessage,
+  toFormInvoice,
+  isReceipt,
+} from '../lib/invoiceForm'
 
 const labelClass = 'block text-xs font-medium text-muted mb-1'
 
@@ -66,6 +71,8 @@ export default function JobDetailPage() {
     )
   }
 
+  const receipt = isReceipt(form.document_type)
+
   return (
     <div className="mx-auto min-h-screen w-full px-[1%] bg-surface">
       <div className="grid grid-cols-2 gap-4 p-2">
@@ -106,12 +113,14 @@ export default function JobDetailPage() {
             </div>
             <ReadOnlyField label="Number" value={form.invoice_number} />
           </div>
-          <div className="grid grid-cols-2 gap-5">
+          <div className={`grid gap-5 ${receipt ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <ReadOnlyField label="Issue date" value={form.issue_date} />
-            <ReadOnlyField label="Due date" value={form.due_date} />
+            {!receipt && <ReadOnlyField label="Due date" value={form.due_date} />}
           </div>
 
-          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-edge pt-3 pb-3">
+          <div
+            className={`grid gap-5 mt-5 border-t border-edge pt-3 pb-3 ${receipt ? 'grid-cols-1' : 'grid-cols-2'}`}
+          >
             <div>
               <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
               <div className="space-y-2">
@@ -121,14 +130,16 @@ export default function JobDetailPage() {
                 <ReadOnlyField label="IBAN" value={form.vendor.iban} />
               </div>
             </div>
-            <div>
-              <h2 className="mb-2 text-sm font-semibold">Customer</h2>
-              <div className="space-y-2">
-                <ReadOnlyField label="Name" value={form.customer.name} />
-                <ReadOnlyField label="Address" value={form.customer.address} />
-                <ReadOnlyField label="Tax ID" value={form.customer.tax_id} />
+            {!receipt && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold">Customer</h2>
+                <div className="space-y-2">
+                  <ReadOnlyField label="Name" value={form.customer.name} />
+                  <ReadOnlyField label="Address" value={form.customer.address} />
+                  <ReadOnlyField label="Tax ID" value={form.customer.tax_id} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <div className="border-t border-edge pt-3 pb-3">

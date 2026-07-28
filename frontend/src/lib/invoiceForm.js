@@ -27,6 +27,13 @@ export function friendlyIssueMessage(issue) {
   return category ? ERROR_CATEGORY_MESSAGES[category] : issue.message
 }
 
+// Receipts don't carry customer or due-date info in this schema's training
+// data — customer/due_date stay valid null fields either way, this only
+// controls what the UI asks a reviewer to look at.
+export function isReceipt(documentType) {
+  return documentType === 'receipt'
+}
+
 export const BLANK_PARTY = { name: '', address: '', tax_id: '', iban: '' }
 export const BLANK_LINE_ITEM = {
   description: '',

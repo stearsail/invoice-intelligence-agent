@@ -13,6 +13,7 @@ import {
   toFormInvoice,
   BLANK_LINE_ITEM,
   lineItemHasData,
+  isReceipt,
 } from '../lib/invoiceForm'
 
 function blankToNull(value) {
@@ -20,6 +21,7 @@ function blankToNull(value) {
 }
 
 function toPayload(form) {
+  const receipt = isReceipt(form.document_type)
   const vendor = form.vendor.name.trim()
     ? {
       name: form.vendor.name,
@@ -28,14 +30,18 @@ function toPayload(form) {
       iban: blankToNull(form.vendor.iban),
     }
     : null
-  const customer = form.customer.name.trim()
-    ? {
-      name: form.customer.name,
-      address: blankToNull(form.customer.address),
-      tax_id: blankToNull(form.customer.tax_id),
-      iban: blankToNull(form.customer.iban),
-    }
-    : null
+  // customer/due_date are hidden on the receipt form — send null regardless
+  // of what's still sitting in form state (e.g. left over from switching an
+  // invoice's document_type to receipt mid-edit) rather than the stale value.
+  const customer =
+    !receipt && form.customer.name.trim()
+      ? {
+        name: form.customer.name,
+        address: blankToNull(form.customer.address),
+        tax_id: blankToNull(form.customer.tax_id),
+        iban: blankToNull(form.customer.iban),
+      }
+      : null
 
   return {
     document_type: form.document_type,
@@ -43,7 +49,7 @@ function toPayload(form) {
     customer,
     invoice_number: blankToNull(form.invoice_number),
     issue_date: blankToNull(form.issue_date),
-    due_date: blankToNull(form.due_date),
+    due_date: receipt ? null : blankToNull(form.due_date),
     currency: form.currency.toUpperCase(),
     line_items: form.line_items
       .filter((line) => line.description.trim() !== '' && !line.marked)
@@ -88,6 +94,7 @@ function JobEditPageInner() {
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [reviewInfo, setReviewInfo] = useState(null)
+  const receipt = isReceipt(form?.document_type)
 
   useEffect(() => {
     async function load() {
@@ -257,22 +264,26 @@ function JobEditPageInner() {
             />
 
           </div>
-          <div className='grid grid-cols-2 gap-5'>
+          <div className={`grid gap-5 ${receipt ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <Field
               label="Issue date"
               type="date"
               value={form.issue_date}
               onChange={(e) => updateField('issue_date', e.target.value)}
             />
-            <Field
-              label="Due date"
-              type="date"
-              value={form.due_date}
-              onChange={(e) => updateField('due_date', e.target.value)}
-            />
+            {!receipt && (
+              <Field
+                label="Due date"
+                type="date"
+                value={form.due_date}
+                onChange={(e) => updateField('due_date', e.target.value)}
+              />
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-5 mt-5 border-t border-edge pt-3 pb-3">
+          <div
+            className={`grid gap-5 mt-5 border-t border-edge pt-3 pb-3 ${receipt ? 'grid-cols-1' : 'grid-cols-2'}`}
+          >
             <div>
               <h2 className="mb-2 text-sm font-semibold">Vendor</h2>
               <div className="space-y-2">
@@ -298,26 +309,28 @@ function JobEditPageInner() {
                 />
               </div>
             </div>
-            <div>
-              <h2 className="mb-2 text-sm font-semibold">Customer</h2>
-              <div className="space-y-2">
-                <Field
-                  label="Name"
-                  value={form.customer.name}
-                  onChange={(e) => updateParty('customer', 'name', e.target.value)}
-                />
-                <Field
-                  label="Address"
-                  value={form.customer.address}
-                  onChange={(e) => updateParty('customer', 'address', e.target.value)}
-                />
-                <Field
-                  label="Tax ID"
-                  value={form.customer.tax_id}
-                  onChange={(e) => updateParty('customer', 'tax_id', e.target.value)}
-                />
+            {!receipt && (
+              <div>
+                <h2 className="mb-2 text-sm font-semibold">Customer</h2>
+                <div className="space-y-2">
+                  <Field
+                    label="Name"
+                    value={form.customer.name}
+                    onChange={(e) => updateParty('customer', 'name', e.target.value)}
+                  />
+                  <Field
+                    label="Address"
+                    value={form.customer.address}
+                    onChange={(e) => updateParty('customer', 'address', e.target.value)}
+                  />
+                  <Field
+                    label="Tax ID"
+                    value={form.customer.tax_id}
+                    onChange={(e) => updateParty('customer', 'tax_id', e.target.value)}
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div className="border-t border-edge pt-3 pb-3">
             <div className="mb-2 flex items-center justify-between">
