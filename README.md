@@ -22,7 +22,16 @@ The design goal for model routing is cost/latency: the cheap specialist handles 
 
 A React SPA uploads to a FastAPI backend, which saves the job and enqueues it on a Redis-backed task queue. A separate **Arq worker** process runs the extraction workflow and writes the outcome to Postgres — durable by design, so a backend restart mid-extraction doesn't lose in-flight work the way an in-process background task would.
 
-The workflow itself is a LangGraph state machine with conditional routing:
+The workflow itself is a LangGraph state machine with conditional routing, generated directly from the compiled graph ([`explore/graph_display.ipynb`](explore/graph_display.ipynb)):
+
+![Extraction workflow graph](docs/workflow-graph.png)
+
+A few of the edge labels are worth reading precisely rather than at face value:
+
+- **`success` / `needs_fallback`** out of `specialist_extract` — routes on whether the specialist's raw output parsed into a valid `Invoice` at all, before reconciliation ever runs.
+- **`reconciled`** out of `validate_reconcile` — despite the name, this fires in two cases: a genuinely clean extraction, *or* one that still has issues but has already used its one frontier retry. Either way, there's nothing left to gain by trying again, so it proceeds to `ledger_write`. It is not a claim that the entry is correct — only that automated retries are exhausted.
+- **`retry_via_frontier`** — only reachable when the *specialist's* draft has issues and the frontier hasn't been tried yet; the one retry the system spends before asking a human.
+- **`total_failure`** — `invoice` came back `None` from both models; skips `ledger_write` entirely rather than persisting an empty or fabricated row. The job still surfaces in the review queue (`Job.status == "extraction_failed"`), and a reviewer fills it in from scratch.
 
 | Node | Responsibility |
 |---|---|
@@ -30,7 +39,7 @@ The workflow itself is a LangGraph state machine with conditional routing:
 | `validate_reconcile` | Run schema, arithmetic, and duplicate checks |
 | `frontier_extract_fallback` | Re-extract with the frontier model when the specialist's output is unusable |
 | `frontier_review_fallback` | One retry with the reconciliation issues fed back as context |
-| `ledger_write` | Persist the entry — every entry, always flagged for human confirmation |
+| `ledger_write` | Persist the entry — every entry, always flagged for human confirmation, regardless of which edge led here |
 
 Retryable failures (a model endpoint being briefly unreachable) never reach `ledger_write` at all — they propagate uncaught out of the extractor and out of the whole graph, straight to the worker's retry/backoff logic, so Arq can retry the identical call later. Everything else (bad input, malformed output) is caught inside the extractor and routed through the graph as a normal result.
 
