@@ -16,6 +16,15 @@ class LedgerEntry(SQLModel, table=True):
     needs_review: bool = Field(default=False, index=True)
     review_reason: list[dict] | None = Field(sa_column=Column(JSON))
     job_id: int = Field(foreign_key="job.id")
+    # which extractor's output this entry was written from. null for entries
+    # written by a human from scratch (edit_job on a job with no prior entry)
+    extracted_by: Literal["specialist", "frontier"] | None = Field(
+        default=None, sa_column=Column(String, nullable=True)
+    )
+    # true if the reviewer's submission actually differs from what was stored
+    # false if they confirmed it as-is
+    # null until reviewed at all
+    reviewed_with_changes: bool | None = Field(default=None)
 
 
 class Job(SQLModel, table=True):

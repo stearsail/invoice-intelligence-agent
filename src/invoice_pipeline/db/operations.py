@@ -1,3 +1,5 @@
+from typing import Literal
+
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import or_, select
 from invoice_pipeline.db.models import Job, LedgerEntry
@@ -39,6 +41,7 @@ async def write_entry(
     invoice: Invoice,
     needs_review: bool = False,
     review_reason: list[dict] | None = None,
+    extracted_by: Literal["specialist", "frontier"] | None = None,
 ) -> LedgerEntry:
     entry = LedgerEntry(
         invoice_number=invoice.invoice_number,
@@ -50,6 +53,7 @@ async def write_entry(
         needs_review=needs_review,
         review_reason=review_reason,
         job_id=job_id,
+        extracted_by=extracted_by,
     )
     session.add(entry)
     await session.commit()
@@ -62,12 +66,14 @@ async def update_entry(
     statement = select(LedgerEntry).where(LedgerEntry.job_id == job_id)
     result = await session.exec(statement)
     entry = result.first()
+    new_data = invoice.model_dump(mode="json")
+    entry.reviewed_with_changes = new_data != entry.invoice_data
     entry.invoice_number = invoice.invoice_number
     entry.vendor_name = invoice.vendor.name if invoice.vendor else None
     entry.issue_date = invoice.issue_date
     entry.currency = invoice.currency
     entry.grand_total = invoice.grand_total
-    entry.invoice_data = invoice.model_dump(mode="json")
+    entry.invoice_data = new_data
     entry.needs_review = False
     entry.review_reason = None
     session.add(entry)

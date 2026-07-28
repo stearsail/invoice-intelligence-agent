@@ -34,6 +34,19 @@ export function isReceipt(documentType) {
   return documentType === 'receipt'
 }
 
+// Deliberately understated — an attribution line, not a warning banner. Null
+// for entries with no captured attempt (written by a human from scratch via
+// edit_job, or predating this field).
+export function extractionSourceLabel(extractedBy, reviewedWithChanges, { compact = false } = {}) {
+  if (!extractedBy) return null
+  if (compact) {
+    return reviewedWithChanges ? `${extractedBy} · edited` : extractedBy
+  }
+  return reviewedWithChanges
+    ? `Extracted by ${extractedBy} · corrected on review`
+    : `Extracted by ${extractedBy}`
+}
+
 export const BLANK_PARTY = { name: '', address: '', tax_id: '', iban: '' }
 export const BLANK_LINE_ITEM = {
   description: '',

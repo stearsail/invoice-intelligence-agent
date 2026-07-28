@@ -1,6 +1,6 @@
 # Invoice Processing Pipeline
 
-An end-to-end system that extracts structured data from invoices and receipts, validates it, and writes it to a reviewable ledger. A **fine-tuned small vision-language model** does the extraction cheaply; a **frontier model** is used only as a fallback when the specialist's output is malformed or fails validation. Processing is asynchronous and durable — jobs run on a Redis-backed task queue with automatic retries for transient failures — and every result, clean or not, requires a human to confirm it before it's considered final.
+An end-to-end system that extracts structured data from invoices and receipts, validates it, and writes it to a reviewable ledger. A **fine-tuned small vision-language model** does the extraction cheaply; a **frontier model** is used only as a fallback when the specialist's output is malformed or fails validation. Processing is asynchronous and durable — jobs run on a Redis-backed task queue with automatic retries for transient failures — and every result, clean or not, requires a human verification before being considered final.
 
 Every routing decision — retry, fallback, when to stop — is plain code checking state. The LLMs are only ever invoked to do one thing, extract structured JSON from an image, at fixed points in a [LangGraph](https://langchain-ai.github.io/langgraph/) state machine.
 
@@ -8,12 +8,12 @@ This is a personal project built to practice taking an LLM system all the way fr
 
 ## What it does
 
-1. A user uploads an invoice/receipt image through the web UI (PNG or JPEG — PDF ingestion isn't implemented).
+1. A user uploads an invoice/receipt image through the web UI (PNG or JPEG).
 2. The backend saves the file, creates a `Job` record, and enqueues an extraction task on a Redis-backed queue ([Arq](https://arq-docs.helpmanual.io/)). A separate worker process picks it up.
 3. A **fine-tuned Qwen3-VL** model (served via vLLM) extracts the invoice as structured JSON.
 4. The output is validated against a Pydantic schema and **reconciled** — line items are summed against the subtotal, the grand total is recomputed from its components, and the invoice number is checked against the existing ledger for duplicates.
 5. If the specialist's output is malformed or fails reconciliation, the workflow makes **one automatic retry with the frontier model** (Claude Haiku 4.5), re-prompting it with the specific issues found.
-6. The result is written to the Postgres ledger. **Every entry requires a human to confirm it** — reconciliation issues are surfaced to prioritize what a reviewer checks first, they don't gate whether a human ever sees it. Internal arithmetic consistency isn't proof the content is correct, and the specialist doesn't have a rigorous accuracy benchmark yet, so nothing publishes unsupervised.
+6. The result is written to the Postgres ledger. **Every entry requires a human verification** — reconciliation issues are surfaced to prioritize what a reviewer checks first, they don't gate whether a human ever sees it. Internal arithmetic consistency isn't proof the content is correct.
 7. Failures are classified as retryable or permanent ([`workflow/error_categories.py`](src/invoice_pipeline/workflow/error_categories.py)): a transiently unreachable model endpoint is retried automatically with backoff; a malformed request or bad output is not, since retrying it would fail identically. Jobs that exhaust retries land in a small dead-letter view where they can be manually re-queued or deleted.
 
 The design goal for model routing is cost/latency: the cheap specialist handles the common case, and the expensive model is only invoked when something actually looks wrong. That's a separate concern from *review* — routing decides which model produces the draft; review decides whether it's trusted.
@@ -22,11 +22,11 @@ The design goal for model routing is cost/latency: the cheap specialist handles 
 
 A React SPA uploads to a FastAPI backend, which saves the job and enqueues it on a Redis-backed task queue. A separate **Arq worker** process runs the extraction workflow and writes the outcome to Postgres — durable by design, so a backend restart mid-extraction doesn't lose in-flight work the way an in-process background task would.
 
-The workflow itself is a LangGraph state machine with conditional routing, generated directly from the compiled graph ([`explore/graph_display.ipynb`](explore/graph_display.ipynb)):
+The workflow itself is a LangGraph state machine with conditional routing, generated directly from the compiled graph:
 
 ![Extraction workflow graph](docs/workflow-graph.png)
 
-A few of the edge labels are worth reading precisely rather than at face value:
+A few of the edge labels are worth reading precisely:
 
 - **`success` / `needs_fallback`** out of `specialist_extract` — routes on whether the specialist's raw output parsed into a valid `Invoice` at all, before reconciliation ever runs.
 - **`reconciled`** out of `validate_reconcile` — despite the name, this fires in two cases: a genuinely clean extraction, *or* one that still has issues but has already used its one frontier retry. Either way, there's nothing left to gain by trying again, so it proceeds to `ledger_write`. It is not a claim that the entry is correct — only that automated retries are exhausted.
@@ -65,9 +65,7 @@ The specialist is **Qwen3-VL-4B-Instruct**, fine-tuned with **LoRA (SFT)** using
 
 Training data is pooled from three sources ([`scripts/build_training_splits.py`](scripts/build_training_splits.py)) — 3,985 train / 443 val:
 - **[CORD](https://github.com/clovaai/cord)** (814) and **[SROIE](https://huggingface.co/datasets/darentang/sroie)** (546) — real receipts, converted via locale-aware number parsers ([`scripts/converters/`](scripts/converters/)) that handle mixed `.`/`,` thousands/decimal conventions.
-- **[FATURA](https://huggingface.co/datasets/mathieu1256/FATURA2-invoices)** (2,625) — synthetic invoices, labeled by running a **Qwen3-VL-32B-Instruct** model locally via Unsloth with vLLM's continuous batching, on a rented GPU — chosen over frontier-API labeling to keep labeling cost near zero at this volume.
-
-A fourth candidate dataset (mychen76) was trained on once and then dropped in favour of FATURA: inspection showed inconsistent field labeling and a high rate of missing totals, and the swap moved best `eval_loss` from 0.050 to 0.017 on an otherwise identical run.
+- **[FATURA](https://huggingface.co/datasets/mathieu1256/FATURA2-invoices)** (2,625) — synthetic invoices, labeled by running a **Qwen3-VL-32B-Instruct** model locally via Unsloth with vLLM's continuous batching, on a rented GPU.
 
 - Training: [`scripts/train_qwen_vl.py`](scripts/train_qwen_vl.py)
 - Serving locally: [`scripts/serve_vllm.sh`](scripts/serve_vllm.sh) — the `--served-model-name` it passes must match `SPECIALIST_MODEL` in the environment, or the specialist call 404s
@@ -81,7 +79,7 @@ The **human-verified** set at `data/golden/test.jsonl` (96 rows, 5 more rejected
 
 ## The schema
 
-Extraction targets a strict Pydantic model ([`src/invoice_pipeline/schema.py`](src/invoice_pipeline/schema.py)) with `extra="forbid"`: an `Invoice` with typed `Party` (vendor/customer), `LineItem`s, `Decimal` money fields, an ISO-4217 currency pattern, and a `document_type` literal (`invoice` / `receipt` — no training data ever contained a credit note, so it isn't a representable output rather than silently mishandled). Using `Decimal` throughout keeps the reconciliation arithmetic exact.
+Extraction targets a strict Pydantic model ([`src/invoice_pipeline/schema.py`](src/invoice_pipeline/schema.py)) with `extra="forbid"`: an `Invoice` with typed `Party` (vendor/customer), `LineItem`s, `Decimal` money fields, an ISO-4217 currency pattern, and a `document_type` literal (`invoice` / `receipt`). Using `Decimal` throughout keeps the reconciliation arithmetic exact.
 
 ## Backend
 
@@ -147,6 +145,4 @@ This is an actively-developed learning project, not a production product. Honest
 - **No observability/tracing wired in.** Nothing currently traces a run's prompts, latency, or the specialist-vs-frontier split per job.
 - **No auth.** The API and UI are wide open — fine for local/personal use, not for anything multi-user.
 - Training data leans template-heavy (FATURA is synthetic) and receipt-heavy (CORD/SROIE); real-world invoice layout diversity is still limited, so out-of-domain documents lean more on the frontier fallback.
-- The specialist uses manual JSON parsing; moving it to vLLM's **guided/structured decoding** (to constrain generation to the schema) would reduce malformed-output failures, though most observed failures so far are connectivity or schema-representability issues (e.g. a labor line item quantified in hours) rather than syntactically broken JSON.
 - Uploaded files are stored on **local disk** (no S3/object storage) — deliberately scoped down for a personal project.
-- Only the CORD converter has unit tests; SROIE and the retired mychen76 converter don't.

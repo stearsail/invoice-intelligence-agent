@@ -26,6 +26,23 @@ def _load_source_records(source_dir: Path) -> list[dict]:
     return records
 
 
+def _load_reviewed_image_paths() -> set[str]:
+    """image_paths already human-reviewed — accepted into the golden set or
+    rejected as unusable. These must never re-enter train/val, and never be
+    re-drawn as a fresh golden candidate either: without this exclusion,
+    re-running this script after the source mix changes (e.g. swapping one
+    dataset for another) reshuffles everything from scratch and can silently
+    hand an already-verified golden document back to training."""
+    paths = set()
+    for jsonl_path in (GOLDEN_DIR / "test.jsonl", GOLDEN_DIR / "rejected.jsonl"):
+        if not jsonl_path.exists():
+            continue
+        with open(jsonl_path, encoding="utf-8") as f:
+            for line in f:
+                paths.add(json.loads(line)["image_path"])
+    return paths
+
+
 def _write_jsonl(records: list[dict], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -35,11 +52,13 @@ def _write_jsonl(records: list[dict], path: Path) -> None:
 
 def build_splits() -> None:
     random.seed(SEED)
+    reviewed_paths = _load_reviewed_image_paths()
     train_records, val_records, golden_records = [], [], []
 
     source_dirs = [d for d in sorted(PROCESSED_DIR.iterdir()) if d.is_dir()]
     for source_dir in source_dirs:
         records = _load_source_records(source_dir)
+        records = [r for r in records if r["image_path"] not in reviewed_paths]
         random.shuffle(records)
 
         n_golden = round(len(records) * GOLDEN_FRACTION)
@@ -51,8 +70,8 @@ def build_splits() -> None:
         train = remaining[n_val:]
 
         print(
-            f"{source_dir.name}: {len(records)} total -> "
-            f"{len(train)} train / {len(val)} val / {len(golden)} golden"
+            f"{source_dir.name}: {len(records)} available (excluding already-reviewed) -> "
+            f"{len(train)} train / {len(val)} val / {len(golden)} new golden candidates"
         )
 
         train_records.extend(train)
@@ -69,7 +88,8 @@ def build_splits() -> None:
 
     print(
         f"\nTotal: {len(train_records)} train / {len(val_records)} val / "
-        f"{len(golden_records)} golden (pending manual review before use)"
+        f"{len(golden_records)} new golden candidates (pending manual review before use) "
+        f"— {len(reviewed_paths)} already-reviewed documents excluded from all splits"
     )
 
 

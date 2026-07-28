@@ -13,6 +13,7 @@ from invoice_pipeline.db.operations import (
     query_resolved_ledger,
     query_job,
     query_reviewables,
+    update_entry,
     update_job,
     write_entry,
 )
@@ -93,6 +94,51 @@ async def test_write_invoice_stores_full_invoice_as_json(session):
     assert restored.invoice_number == "INV-001"
     assert restored.issue_date == date(2026, 7, 1)
     assert restored.grand_total == Decimal("10.00")
+
+
+@pytest.mark.anyio
+async def test_write_entry_persists_extracted_by(session):
+    job = await _job(session)
+
+    entry = await write_entry(session, job.id, _invoice(), extracted_by="specialist")
+
+    assert entry.extracted_by == "specialist"
+
+
+@pytest.mark.anyio
+async def test_write_entry_extracted_by_defaults_to_none(session):
+    # a human-authored entry (edit_job on a job with no prior entry) has no
+    # model attempt to attribute — extracted_by should stay unset, not guess.
+    job = await _job(session)
+
+    entry = await write_entry(session, job.id, _invoice())
+
+    assert entry.extracted_by is None
+
+
+@pytest.mark.anyio
+async def test_update_entry_marks_reviewed_with_changes_true_when_invoice_differs(
+    session,
+):
+    job = await _job(session)
+    await write_entry(session, job.id, _invoice(invoice_number="INV-001"))
+
+    updated = await update_entry(session, job.id, _invoice(invoice_number="INV-002"))
+
+    assert updated.reviewed_with_changes is True
+
+
+@pytest.mark.anyio
+async def test_update_entry_marks_reviewed_with_changes_false_when_identical(
+    session,
+):
+    job = await _job(session)
+    original = _invoice(invoice_number="INV-001")
+    await write_entry(session, job.id, original)
+
+    updated = await update_entry(session, job.id, original)
+
+    assert updated.reviewed_with_changes is False
 
 
 @pytest.mark.anyio

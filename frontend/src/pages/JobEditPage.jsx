@@ -9,6 +9,7 @@ import {
 } from '../lib/api'
 import {
   CATEGORY_STYLES,
+  extractionSourceLabel,
   friendlyIssueMessage,
   toFormInvoice,
   BLANK_LINE_ITEM,
@@ -95,6 +96,8 @@ function JobEditPageInner() {
   const [deleting, setDeleting] = useState(false)
   const [reviewInfo, setReviewInfo] = useState(null)
   const receipt = isReceipt(form?.document_type)
+  const sourceLabel =
+    reviewInfo && extractionSourceLabel(reviewInfo.extractedBy, reviewInfo.reviewedWithChanges)
 
   useEffect(() => {
     async function load() {
@@ -104,6 +107,8 @@ function JobEditPageInner() {
         setReviewInfo({
           jobError: item.error,
           reviewReason: item.ledger_entry?.review_reason ?? [],
+          extractedBy: item.ledger_entry?.extracted_by ?? null,
+          reviewedWithChanges: item.ledger_entry?.reviewed_with_changes ?? null,
         })
       } catch (err) {
         if (err.status === 404) {
@@ -218,6 +223,7 @@ function JobEditPageInner() {
           onSubmit={handleSubmit}
           className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-5"
         >
+          {sourceLabel && <p className="text-xs text-muted">{sourceLabel}</p>}
           <div>
           {reviewInfo &&
             (reviewInfo.jobError || reviewInfo.reviewReason.length > 0) && (

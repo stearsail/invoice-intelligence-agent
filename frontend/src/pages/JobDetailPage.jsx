@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { getJobDetail, getJobImageUrl } from '../lib/api'
 import {
   CATEGORY_STYLES,
+  extractionSourceLabel,
   friendlyIssueMessage,
   toFormInvoice,
   isReceipt,
@@ -43,6 +44,8 @@ export default function JobDetailPage() {
         setReviewInfo({
           jobError: item.error,
           reviewReason: item.ledger_entry?.review_reason ?? [],
+          extractedBy: item.ledger_entry?.extracted_by ?? null,
+          reviewedWithChanges: item.ledger_entry?.reviewed_with_changes ?? null,
         })
       } catch (err) {
         if (err.status === 404) {
@@ -72,11 +75,14 @@ export default function JobDetailPage() {
   }
 
   const receipt = isReceipt(form.document_type)
+  const sourceLabel =
+    reviewInfo && extractionSourceLabel(reviewInfo.extractedBy, reviewInfo.reviewedWithChanges)
 
   return (
     <div className="mx-auto min-h-screen w-full px-[1%] bg-surface">
       <div className="grid grid-cols-2 gap-4 p-2">
         <div className="sticky top-10 max-h-[90vh] space-y-2 self-start overflow-y-auto pr-5">
+          {sourceLabel && <p className="text-xs text-muted">{sourceLabel}</p>}
           <div>
             {reviewInfo &&
               (reviewInfo.jobError || reviewInfo.reviewReason.length > 0) && (

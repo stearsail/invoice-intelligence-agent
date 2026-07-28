@@ -142,6 +142,8 @@ async def test_edit_job_on_failed_job_writes_a_confirmed_entry(session):
     assert response.ledger_entry is not None
     assert response.ledger_entry.needs_review is False
     assert response.ledger_entry.review_reason is None
+    # written from scratch by a human — no model attempt to attribute this to
+    assert response.ledger_entry.extracted_by is None
 
 
 @pytest.mark.anyio
@@ -187,6 +189,31 @@ async def test_edit_job_on_flagged_entry_corrects_it_and_clears_review(session):
     assert response.ledger_entry.review_reason is None
     assert response.ledger_entry.grand_total == Decimal("99.99")
     assert response.ledger_entry.invoice_data.invoice_number == "INV-42"
+    assert response.ledger_entry.reviewed_with_changes is True
+
+
+@pytest.mark.anyio
+async def test_edit_job_on_flagged_entry_with_no_changes_marks_reviewed_without_changes(
+    session,
+):
+    job = await create_job(session, file_key="c3d4e5f6.png")
+    await update_job(
+        session, job_id=job.id, status_update="complete", attempts_update=1
+    )
+    original_invoice = _invoice(invoice_number="INV-1")
+    await write_entry(
+        session,
+        job.id,
+        original_invoice,
+        needs_review=True,
+        review_reason=[{"category": "unverifiable", "message": "Missing subtotal"}],
+    )
+
+    # reviewer looks it over and confirms as-is, submitting the same data back
+    response = await edit_job(job_id=job.id, invoice=original_invoice, session=session)
+
+    assert response.ledger_entry.needs_review is False
+    assert response.ledger_entry.reviewed_with_changes is False
 
 
 @pytest.mark.anyio

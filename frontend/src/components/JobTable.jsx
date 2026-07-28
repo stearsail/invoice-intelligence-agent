@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { formatDateTime } from '../lib/format'
+import { extractionSourceLabel } from '../lib/invoiceForm'
 
 const STATUS_STYLES = {
   pending: 'bg-surface-hover text-muted',
@@ -44,25 +45,33 @@ export default function JobTable({ items, linkLabel, linkTo, showEntryId = false
         </tr>
       </thead>
       <tbody>
-        {items.map((item) => (
-          <tr key={item.job_id} className="border-b border-edge hover:bg-surface-hover">
-            <td className="py-2 pr-4">
-              {showEntryId ? (item.ledger_entry?.id ?? item.job_id) : item.job_id}
-            </td>
-            <td className="py-2 pr-4">
-              <StatusBadge status={item.status} />
-            </td>
-            <td className="py-2 pr-4 text-muted">{formatDateTime(item.created_at)}</td>
-            <td className="py-2">
-              <Link
-                to={linkTo(item.job_id)}
-                className="inline-block rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover"
-              >
-                {linkLabel}
-              </Link>
-            </td>
-          </tr>
-        ))}
+        {items.map((item) => {
+          const sourceLabel = extractionSourceLabel(
+            item.ledger_entry?.extracted_by,
+            item.ledger_entry?.reviewed_with_changes,
+            { compact: true }
+          )
+          return (
+            <tr key={item.job_id} className="border-b border-edge hover:bg-surface-hover">
+              <td className="py-2 pr-4">
+                {showEntryId ? (item.ledger_entry?.id ?? item.job_id) : item.job_id}
+              </td>
+              <td className="py-2 pr-4">
+                <StatusBadge status={item.status} />
+                {sourceLabel && <p className="mt-0.5 text-[11px] text-muted">{sourceLabel}</p>}
+              </td>
+              <td className="py-2 pr-4 text-muted">{formatDateTime(item.created_at)}</td>
+              <td className="py-2">
+                <Link
+                  to={linkTo(item.job_id)}
+                  className="inline-block rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover"
+                >
+                  {linkLabel}
+                </Link>
+              </td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )

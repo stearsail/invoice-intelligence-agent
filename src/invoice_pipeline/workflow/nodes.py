@@ -88,5 +88,6 @@ async def ledger_write(state: State) -> dict:
             state["invoice"],
             needs_review=True,
             review_reason=review_reason,
+            extracted_by=state["attempt"],
         )
     return {"ledger_entry_id": entry.id}

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel, ConfigDict
 from invoice_pipeline.schema import Invoice
 from invoice_pipeline.reconciliation import ReconciliationIssue
@@ -22,6 +23,8 @@ class LedgerEntryResponse(BaseModel):
     created_at: datetime
     needs_review: bool
     review_reason: list[ReconciliationIssue] | None
+    extracted_by: Literal["specialist", "frontier"] | None
+    reviewed_with_changes: bool | None
 
 
 class JobResponse(BaseModel):

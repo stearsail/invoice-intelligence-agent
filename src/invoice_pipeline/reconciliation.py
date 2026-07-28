@@ -10,6 +10,9 @@ class ReconciliationIssue(BaseModel):
     message: str
 
 
+_ROUNDING_TOLERANCE_PER_ITEM = Decimal("0.01")
+
+
 def reconcile(invoice: Invoice) -> list[ReconciliationIssue]:
     issues = []
     if invoice.subtotal is None:
@@ -36,7 +39,7 @@ def reconcile(invoice: Invoice) -> list[ReconciliationIssue]:
         return issues
 
     items_total = sum(item.line_total for item in invoice.line_items)
-    tolerance = invoice.subtotal * Decimal("0.01")
+    tolerance = _ROUNDING_TOLERANCE_PER_ITEM * len(invoice.line_items)
 
     if abs(items_total - invoice.subtotal) > tolerance:
         issues.append(
@@ -52,7 +55,9 @@ def reconcile(invoice: Invoice) -> list[ReconciliationIssue]:
         + (invoice.service_charge or Decimal("0"))
         - (invoice.discount or Decimal("0"))
     )
-    tolerance = invoice.grand_total * Decimal("0.01")
+    # +1 for this recombination step itself, on top of whatever rounding
+    # drift the line items already carried into subtotal.
+    tolerance = _ROUNDING_TOLERANCE_PER_ITEM * (len(invoice.line_items) + 1)
 
     if abs(total - invoice.grand_total) > tolerance:
         issues.append(

@@ -82,13 +82,21 @@ def no_real_ledger(monkeypatch):
 
     written = []
 
-    async def _write(session, job_id, invoice, needs_review=False, review_reason=None):
+    async def _write(
+        session,
+        job_id,
+        invoice,
+        needs_review=False,
+        review_reason=None,
+        extracted_by=None,
+    ):
         written.append(
             {
                 "job_id": job_id,
                 "invoice": invoice,
                 "needs_review": needs_review,
                 "review_reason": review_reason,
+                "extracted_by": extracted_by,
             }
         )
         return MagicMock(id=1)
@@ -111,6 +119,7 @@ async def test_specialist_success_reconciles_and_writes_ledger(no_real_ledger):
     assert no_real_ledger[0]["needs_review"] is True
     assert no_real_ledger[0]["review_reason"] == []
     assert no_real_ledger[0]["job_id"] == 1
+    assert no_real_ledger[0]["extracted_by"] == "specialist"
 
 
 @pytest.mark.anyio
@@ -129,6 +138,7 @@ async def test_specialist_parse_failure_falls_back_to_frontier_and_succeeds(
     assert len(frontier.calls) == 1
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is True
+    assert no_real_ledger[0]["extracted_by"] == "frontier"
 
 
 @pytest.mark.anyio
@@ -168,6 +178,7 @@ async def test_specialist_reconciliation_failure_retries_via_frontier_and_resolv
     assert result["reconciliation_issues"] == []
     assert len(no_real_ledger) == 1
     assert no_real_ledger[0]["needs_review"] is True
+    assert no_real_ledger[0]["extracted_by"] == "frontier"
 
 
 @pytest.mark.anyio

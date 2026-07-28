@@ -111,8 +111,92 @@ def test_grand_total_not_matching_is_flagged():
 
 
 def test_small_rounding_difference_within_tolerance_passes():
-    invoice = _invoice(grand_total=Decimal("110.50"))
+    # 1 line item -> grand-total tolerance is (1 + 1) * 0.01 = 0.02
+    invoice = _invoice(grand_total=Decimal("110.02"))
     assert reconcile(invoice) == []
+
+
+def test_zero_subtotal_tolerates_small_rounding_in_line_items():
+    # under the old tolerance (subtotal * 1%), a subtotal of 0 made the
+    # tolerance exactly 0 regardless of invoice size, so even a genuine
+    # 1-cent rounding difference was incorrectly flagged.
+    invoice = _invoice(
+        subtotal=Decimal("0"),
+        tax=Decimal("0"),
+        grand_total=Decimal("0"),
+        line_items=[
+            LineItem(
+                description="Free sample",
+                quantity=Decimal("1"),
+                unit_price=Decimal("0.01"),
+                line_total=Decimal("0.01"),
+            ),
+        ],
+    )
+    assert reconcile(invoice) == []
+
+
+def test_negative_subtotal_matching_line_items_is_not_falsely_flagged():
+    # under the old tolerance (subtotal * 1%), a negative subtotal made the
+    # tolerance negative too, so abs(diff) > tolerance was true even for an
+    # exact match.
+    invoice = _invoice(
+        subtotal=Decimal("-50"),
+        tax=Decimal("0"),
+        grand_total=Decimal("-50"),
+        line_items=[
+            LineItem(
+                description="Discount adjustment",
+                quantity=Decimal("1"),
+                unit_price=Decimal("-50"),
+                line_total=Decimal("-50"),
+            ),
+        ],
+    )
+    assert reconcile(invoice) == []
+
+
+def test_tolerance_boundary_for_multiple_line_items_passes():
+    # 3 line items -> line-item tolerance is 3 * 0.01 = 0.03
+    invoice = _invoice(
+        subtotal=Decimal("100.02"),
+        tax=Decimal("0"),
+        grand_total=Decimal("100.02"),
+        line_items=[
+            LineItem(
+                description=f"Item {i}",
+                quantity=Decimal("1"),
+                unit_price=Decimal("33.33"),
+                line_total=Decimal("33.33"),
+            )
+            for i in range(3)
+        ],
+    )
+    # items sum to 99.99, subtotal is 100.02 -> a 0.03 difference, right at
+    # the 3-line tolerance boundary
+    assert reconcile(invoice) == []
+
+
+def test_tolerance_scales_with_number_of_line_items():
+    invoice = _invoice(
+        subtotal=Decimal("100.03"),
+        tax=Decimal("0"),
+        grand_total=Decimal("100.03"),
+        line_items=[
+            LineItem(
+                description=f"Item {i}",
+                quantity=Decimal("1"),
+                unit_price=Decimal("33.33"),
+                line_total=Decimal("33.33"),
+            )
+            for i in range(3)
+        ],
+    )
+    # items sum to 99.99, subtotal is 100.03 -> a 0.04 difference, past the
+    # 3-line tolerance (0.03)
+    issues = reconcile(invoice)
+    assert len(issues) == 1
+    assert issues[0].category == "mismatch"
 
 
 def test_both_checks_can_fail_independently():
