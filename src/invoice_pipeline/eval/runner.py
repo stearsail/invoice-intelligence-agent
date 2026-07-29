@@ -1,0 +1,180 @@
+import argparse
+import asyncio
+import json
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Protocol
+
+from invoice_pipeline import config
+from invoice_pipeline.eval.metrics import accuracy
+from invoice_pipeline.eval.report import (
+    EvaluationAccumulator,
+    overall_scores,
+    score_invoice,
+    summarize,
+)
+from invoice_pipeline.schema import Invoice
+from invoice_pipeline.workflow.extractors import (
+    ExtractionResult,
+    FrontierExtractor,
+    SpecialistExtractor,
+)
+
+GOLDEN_SET_PATH = config.PROJECT_ROOT / "data" / "golden" / "test.jsonl"
+IMAGE_ROOT = config.PROJECT_ROOT / "data" / "processed"
+
+
+class Predictor(Protocol):
+    async def extract_invoice(self, img_path: str) -> ExtractionResult: ...
+
+
+@dataclass
+class GoldRecord:
+    source: str
+    gold: Invoice
+    image_path: Path
+
+
+@dataclass
+class EvaluationRun:
+    overall: EvaluationAccumulator = field(default_factory=EvaluationAccumulator)
+    by_source: dict[str, EvaluationAccumulator] = field(default_factory=dict)
+    total: int = 0
+    parse_failures: int = 0
+    latencies_seconds: list[float] = field(default_factory=list)
+
+
+def load_golden_set(path: Path = GOLDEN_SET_PATH) -> list[GoldRecord]:
+    records = []
+    with path.open() as f:
+        for line in f:
+            row = json.loads(line)
+            records.append(
+                GoldRecord(
+                    source=row["source"],
+                    gold=Invoice.model_validate(row["invoice"]),
+                    image_path=IMAGE_ROOT / row["image_path"],
+                )
+            )
+    return records
+
+
+def schema_conformance_rate(run: EvaluationRun) -> float:
+    return accuracy(run.total - run.parse_failures, run.total)
+
+
+def percentile(values: list[float], fraction: float) -> float:
+    ordered = sorted(values)
+    index = round(fraction * (len(ordered) - 1))
+    return ordered[index]
+
+
+async def _score_record(
+    predictor: Predictor,
+    record: GoldRecord,
+    run: EvaluationRun,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    async with semaphore:
+        start = time.perf_counter()
+        result = await predictor.extract_invoice(str(record.image_path))
+        run.latencies_seconds.append(time.perf_counter() - start)
+
+    run.total += 1
+    if result.invoice is None:
+        run.parse_failures += 1
+        return
+
+    score_invoice(run.overall, result.invoice, record.gold)
+    by_source = run.by_source.setdefault(record.source, EvaluationAccumulator())
+    score_invoice(by_source, result.invoice, record.gold)
+
+
+async def evaluate(
+    predictor: Predictor, golden_set: list[GoldRecord], concurrency: int = 5
+) -> EvaluationRun:
+    run = EvaluationRun()
+    semaphore = asyncio.Semaphore(concurrency)
+    await asyncio.gather(
+        *(_score_record(predictor, record, run, semaphore) for record in golden_set)
+    )
+    return run
+
+
+def print_report(run: EvaluationRun) -> None:
+    print(f"Documents evaluated: {run.total}")
+    print(f"Schema-conformance rate: {schema_conformance_rate(run):.1%}")
+    if run.latencies_seconds:
+        print(f"Latency p50: {percentile(run.latencies_seconds, 0.5):.2f}s")
+        print(f"Latency p95: {percentile(run.latencies_seconds, 0.95):.2f}s")
+
+    scored_documents = run.total - run.parse_failures
+    if scored_documents == 0:
+        print(
+            "\nNo documents were successfully parsed — no field-level metrics to report."
+        )
+        return
+
+    scores = overall_scores(run.overall)
+    print(f"Overall macro-F1: {scores['macro_f1']:.3f}")
+    print(f"Overall micro-F1: {scores['micro_f1']:.3f}")
+
+    print("\nPer-field breakdown:")
+    for report in summarize(run.overall):
+        if report.metric == "accuracy":
+            print(
+                f"  {report.name:<24} accuracy={report.accuracy:.3f} (n={report.support})"
+            )
+        else:
+            print(
+                f"  {report.name:<24} precision={report.precision:.3f} "
+                f"recall={report.recall:.3f} f1={report.f1:.3f} (n={report.support})"
+            )
+
+    for source, acc in sorted(run.by_source.items()):
+        source_scores = overall_scores(acc)
+        print(
+            f"\n[{source}] macro-F1={source_scores['macro_f1']:.3f} "
+            f"micro-F1={source_scores['micro_f1']:.3f}"
+        )
+
+
+def _build_predictor(name: str, model: str | None = None) -> Predictor:
+    if name == "specialist":
+        return SpecialistExtractor(
+            base_url=config.VLLM_BASE_URL,
+            api_key=config.VLLM_API_KEY,
+            model_name=model or config.SPECIALIST_MODEL,
+        )
+    if name == "frontier":
+        return FrontierExtractor(model_name=model or config.FRONTIER_MODEL)
+    raise ValueError(f"Unknown extractor: {name}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run the invoice extraction benchmark against the golden set."
+    )
+    parser.add_argument(
+        "--extractor", choices=["specialist", "frontier"], required=True
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Override the model name (defaults to config.FRONTIER_MODEL / "
+        "config.SPECIALIST_MODEL depending on --extractor)",
+    )
+    parser.add_argument("--concurrency", type=int, default=5)
+    parser.add_argument("--golden-set", type=Path, default=GOLDEN_SET_PATH)
+    args = parser.parse_args()
+
+    predictor = _build_predictor(args.extractor, model=args.model)
+    golden_set = load_golden_set(args.golden_set)
+    run = asyncio.run(evaluate(predictor, golden_set, concurrency=args.concurrency))
+    print_report(run)
+
+
+if __name__ == "__main__":
+    main()

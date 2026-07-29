@@ -40,6 +40,7 @@ dev = [
     "pandas>=2.3.3",
     "pytest>=9.1.1",
     "ruff>=0.15.20",
+    "scipy>=1.18.0",
     "streamlit>=1.60.0",
 ]
 train = [

@@ -2202,6 +2202,7 @@ dev = [
     { name = "pandas" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "scipy" },
     { name = "streamlit" },
 ]
 train = [
@@ -2242,6 +2243,7 @@ dev = [
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.15.20" },
+    { name = "scipy", specifier = ">=1.18.0" },
     { name = "streamlit", specifier = ">=1.60.0" },
 ]
 train = [

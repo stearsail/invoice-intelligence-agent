@@ -57,5 +57,5 @@ def build_graph(specialist: SpecialistExtractor, frontier: FrontierExtractor):
 
 graph = build_graph(
     specialist=SpecialistExtractor(VLLM_BASE_URL, VLLM_API_KEY, SPECIALIST_MODEL),
-    frontier=FrontierExtractor(FRONTIER_MODEL),
+    frontier=FrontierExtractor(FRONTIER_MODEL, temperature=0.1),
 )

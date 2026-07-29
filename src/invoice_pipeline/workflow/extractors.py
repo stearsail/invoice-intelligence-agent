@@ -82,11 +82,11 @@ class SpecialistExtractor:
 
 class FrontierExtractor:
     def __init__(
-        self, model_name: str, temperature: float = 0.1, max_tokens: int = 4096
+        self, model_name: str, temperature: float | None = None, max_tokens: int = 4096
     ):
         self._client = ChatAnthropic(
             model=model_name,
-            temperature=temperature,
+            temperature=temperature if temperature else None,
             max_tokens_to_sample=max_tokens,
             max_retries=0,
         )
