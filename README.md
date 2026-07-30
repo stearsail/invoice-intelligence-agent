@@ -6,6 +6,8 @@ Every routing decision — retry, fallback, when to stop — is plain code check
 
 This is a personal project built to practice taking an LLM system all the way from *fine-tuning a model* to *running it as a service* — dataset preparation, training, serving, workflow orchestration, a task queue, a persistent ledger, an API, and a UI.
 
+On a 124-document human-verified holdout, the fine-tuned 4B specialist reaches **0.915 macro-F1 / 0.958 micro-F1 with 100% schema conformance** — ahead of a Claude Opus 5 reference ceiling (0.879 / 0.955) on accuracy, behind it on latency. Details in [Evaluation](#evaluation).
+
 ## What it does
 
 1. A user uploads an invoice/receipt image through the web UI (PNG or JPEG).
@@ -16,7 +18,7 @@ This is a personal project built to practice taking an LLM system all the way fr
 6. The result is written to the Postgres ledger. **Every entry requires a human verification** — reconciliation issues are surfaced to prioritize what a reviewer checks first, they don't gate whether a human ever sees it. Internal arithmetic consistency isn't proof the content is correct.
 7. Failures are classified as retryable or permanent ([`workflow/error_categories.py`](src/invoice_pipeline/workflow/error_categories.py)): a transiently unreachable model endpoint is retried automatically with backoff; a malformed request or bad output is not, since retrying it would fail identically. Jobs that exhaust retries land in a small dead-letter view where they can be manually re-queued or deleted.
 
-The design goal for model routing is cost/latency: the cheap specialist handles the common case, and the expensive model is only invoked when something actually looks wrong. That's a separate concern from *review* — routing decides which model produces the draft; review decides whether it's trusted.
+The design goal for model routing is cost: the cheap specialist handles the common case, and the expensive model is only invoked when something actually looks wrong. That's a separate concern from *review* — routing decides which model produces the draft; review decides whether it's trusted.
 
 ## Architecture
 
@@ -73,9 +75,90 @@ Training data is pooled from three sources ([`scripts/build_training_splits.py`]
 
 ### Data splits and the golden set
 
-`data/` is not committed. The split builder holds out a golden fraction per source before carving train/val, so a single run produces a clean three-way split; `data/golden/unverified.jsonl` (125 docs) is the current, uninspected holdout and has no overlap with train or val.
+`data/` is not committed. The split builder ([`scripts/build_training_splits.py`](scripts/build_training_splits.py)) holds out a golden fraction per source *before* carving train/val, so a single run produces a clean three-way split with no overlap between the holdout and either training split.
 
-The **human-verified** set at `data/golden/test.jsonl` (96 rows, 5 more rejected during review) is *not* usable as a benchmark set as it stands, and rebuilding it is a prerequisite for the evaluation work below. It was verified against an earlier data mixture, and re-running the split builder after swapping mychen76 for FATURA reshuffled the holdout underneath it: 54 of its 96 rows come from mychen76, a source no longer in the pool, and 16 of its SROIE documents (13 in `train.jsonl`, 3 in `val.jsonl`) ended up back in the training splits. Any accuracy number measured on it today would be partly measuring memorization.
+The benchmark set at `data/golden/test.jsonl` is **124 human-verified documents** — 26 CORD, 81 FATURA, 17 SROIE.
+
+## Evaluation
+
+[`src/invoice_pipeline/eval/`](src/invoice_pipeline/eval/) runs an extractor over the 124-document golden set and scores each prediction against the human-verified gold record, field by field. Two arms: the **specialist** (fine-tuned Qwen3-VL-4B on a Modal L4) and **Claude Opus 5** as a *reference ceiling* — deliberately stronger than the Haiku 4.5 that serves as the actual production fallback, so the specialist is measured against a good frontier result rather than a convenient one.
+
+### Headline
+
+| | Specialist (Qwen3-VL-4B, LoRA) | Claude Opus 5 (ceiling) |
+|---|---|---|
+| Documents | 124 | 124 |
+| Schema conformance | 100.0% | 100.0% |
+| Overall macro-F1 | **0.915** | 0.879 |
+| Overall micro-F1 | **0.958** | 0.955 |
+| Latency p50 | 13.89s | **8.88s** |
+| Latency p95 | 19.95s | **11.52s** |
+
+Both arms parsed into a valid `Invoice` on all 124 documents. For the specialist that comes from constrained decoding — the request pins `response_format` to a strict `json_schema`, so vLLM can only emit tokens the grammar admits. Before that was wired in, malformed output was the main driver of frontier fallbacks.
+
+### By source
+
+| Source | n | Specialist macro / micro | Opus 5 macro / micro |
+|---|---|---|---|
+| CORD (receipts) | 26 | **0.915** / 0.920 | 0.820 / 0.875 |
+| FATURA (synthetic invoices) | 81 | **0.904** / **0.983** | 0.891 / 0.981 |
+| SROIE (receipts) | 17 | 0.759 / 0.649 | 0.722 / **0.878** |
+| SROIE, trained fields only | 17 | 0.947 / 0.947 | **0.971** / **0.971** |
+
+### What the numbers say
+
+- **The specialist wins on macro-F1 because it hallucinates less.** Opus 5's losses are concentrated in fields it invents where the gold record has nothing — 30 nonexistent vendors (`vendor` precision 0.720 vs. the specialist's 0.987) and 17 fabricated `vendor.tax_id`s, all on receipts that have none. Recall is 1.000 on those fields for both arms: the frontier isn't missing anything, it's adding things. Fine-tuning taught the schema's null convention in a way prompting did not.
+- **The specialist's failure mode is the mirror image: it omits — and it's almost all SROIE.** 44 of its 47 missed line items are on that source (`line_items` F1 0.136 there; `invoice_number` never emitted). This is label coverage, not capacity: the SROIE training source only ever labels company/date/address/total, so the model learned that receipt-shaped input has nothing else. Restricted to those four trained fields it scores 0.947. The fix is relabeling SROIE, not retraining harder.
+- **The frontier is ahead on `grand_total`** (0.960 vs. 0.903) — and both models are weakest on `subtotal` and `tax` (F1 ≈ 0.75–0.80), exactly the fields the reconciliation step recomputes.
+- **The specialist is slower** — a 4B model on one autoscaling L4 vs. a hyperscaler API. Its case rests on per-document cost, which this harness doesn't measure.
+
+<details>
+<summary><strong>Per-field breakdown</strong> (overall, 124 documents)</summary>
+
+`document_type`, `currency`, and `grand_total` are required, so they are scored as accuracy and excluded from the macro/micro-F1 figures, which cover the nullable fields only. `n` is the field's support (`tp + fp + fn`). Per-source breakdowns come from the same runner (see [Reproducing](#reproducing)).
+
+| Field | Metric | Specialist | Opus 5 |
+|---|---|---|---|
+| `document_type` | accuracy | **1.000** (124) | 0.984 (124) |
+| `currency` | accuracy | **0.992** (124) | 0.976 (124) |
+| `grand_total` | accuracy | 0.903 (124) | **0.960** (124) |
+| `invoice_number` | P / R / F1 | 1.000 / 0.835 / 0.910 (91) | 0.978 / 1.000 / **0.989** (93) |
+| `issue_date` | P / R / F1 | 0.978 / 0.958 / 0.968 (97) | 0.989 / 0.989 / **0.989** (96) |
+| `due_date` | P / R / F1 | 1.000 / 0.905 / **0.950** (42) | 0.930 / 0.952 / 0.941 (45) |
+| `subtotal` | P / R / F1 | 0.818 / 0.717 / **0.764** (131) | 0.800 / 0.708 / 0.751 (133) |
+| `tax` | P / R / F1 | 0.821 / 0.719 / 0.767 (74) | 0.768 / 0.828 / **0.797** (80) |
+| `service_charge` | P / R / F1 | 0.750 / 0.600 / **0.667** (6) | 0.500 / 0.600 / 0.545 (8) |
+| `discount` | P / R / F1 | 0.812 / 0.765 / 0.788 (20) | 0.727 / 0.941 / **0.821** (23) |
+| `vendor` | P / R / F1 | 0.987 / 1.000 / **0.994** (78) | 0.720 / 1.000 / 0.837 (107) |
+| `vendor.name` | P / R / F1 | 0.974 / 0.974 / 0.974 (79) | 0.987 / 0.987 / **0.987** (78) |
+| `vendor.address` | P / R / F1 | 0.984 / 0.984 / 0.984 (65) | 0.970 / 1.000 / **0.985** (66) |
+| `vendor.tax_id` | P / R / F1 | 1.000 / 1.000 / **1.000** (17) | 0.500 / 1.000 / 0.667 (34) |
+| `vendor.iban` | P / R / F1 | 0.333 / 1.000 / **0.500** (3) | 0.100 / 1.000 / 0.182 (10) |
+| `customer` | P / R / F1 | 1.000 / 1.000 / **1.000** (71) | 0.947 / 1.000 / 0.973 (75) |
+| `customer.name` | P / R / F1 | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (71) |
+| `customer.address` | P / R / F1 | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (71) |
+| `customer.tax_id` | P / R / F1 | 1.000 / 1.000 / 1.000 (4) | 1.000 / 1.000 / 1.000 (4) |
+| `customer.iban` | P / R / F1 | 1.000 / 1.000 / 1.000 (0) | 1.000 / 1.000 / 1.000 (0) |
+| `line_items` | P / R / F1 | 0.972 / 0.880 / 0.923 (401) | 0.970 / 0.992 / **0.981** (403) |
+| `line_items.description` | P / R / F1 | 0.994 / 0.994 / **0.994** (346) | 0.966 / 0.966 / 0.966 (401) |
+| `line_items.unit_price` | P / R / F1 | 0.967 / 0.987 / **0.977** (309) | 0.910 / 0.994 / 0.950 (368) |
+| `line_items.quantity` | P / R / F1 | 0.997 / 0.991 / **0.994** (342) | 0.990 / 0.995 / 0.992 (389) |
+| `line_items.line_total` | P / R / F1 | 0.977 / 0.977 / 0.977 (352) | 0.990 / 0.990 / **0.990** (392) |
+
+</details>
+
+### How a field is scored
+
+Scoring is deliberately unforgiving of hallucination: every nullable field is judged on presence first (`tp`/`fp`/`fn`/`tn`), and a value present in both but *wrong* is charged as both a false positive and a false negative — a wrong answer costs strictly more than an omission. Strings match by ANLS (normalized Levenshtein, 0.5 floor), money as `Decimal` with 0.01 tolerance, and line items order-independently via Hungarian assignment ([`eval/align.py`](src/invoice_pipeline/eval/align.py)) — unmatched predictions count as hallucinations, unmatched gold items as misses.
+
+### Reproducing
+
+Requires the golden set under `data/` and a running specialist endpoint:
+
+```bash
+uv run python -m invoice_pipeline.eval.runner --extractor specialist --seed 42
+uv run python -m invoice_pipeline.eval.runner --extractor frontier --model claude-opus-5
+```
 
 ## The schema
 
@@ -128,7 +211,7 @@ Model, queue, and upload settings load in [`config.py`](src/invoice_pipeline/con
 
 ## Tests & CI
 
-121 tests ([`tests/`](tests/)) across the workflow's routing and fallback logic, the extractors and their retryable/permanent error split, the task queue worker, the graph runner, reconciliation, image loading, the CORD converter, the training-data adapter, the schema, DB operations, and the API routers. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `ruff` lint + format checks and the full `pytest` suite on every push.
+219 tests ([`tests/`](tests/)) across the workflow's routing and fallback logic, the extractors and their retryable/permanent error split, the task queue worker, the graph runner, reconciliation, image loading, the CORD converter, the training-data adapter, the schema, DB operations, the API routers, and the evaluation harness (alignment, comparison, metrics, reporting, and the runner). CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `ruff` lint + format checks and the full `pytest` suite on every push.
 
 ## Tech stack
 
@@ -141,7 +224,8 @@ Model, queue, and upload settings load in [`config.py`](src/invoice_pipeline/con
 
 This is an actively-developed learning project, not a production product. Honest caveats:
 
-- **No rigorous evaluation harness yet.** There's no benchmark comparing the specialist vs. frontier vs. base model on field-level accuracy against a held-out golden set — the single biggest gap between "a pipeline that runs" and "a pipeline with a measured, defensible accuracy story." The verified golden set also has to be rebuilt first (see above): it's contaminated against the current training splits and majority-sourced from a dataset no longer in use.
+- **The benchmark set is small and single-reviewer.** 124 documents verified by one person, with single-digit support on some fields — individual per-field numbers carry wide error bars; the headline macro/micro-F1 figures are the ones that hold up.
+- **No base-model arm.** The eval doesn't compare against un-tuned Qwen3-VL-4B, so it shows where the specialist stands, not how much the fine-tuning itself bought. That's the obvious next run — along with per-document cost, which the routing design is premised on but the harness doesn't measure.
 - **No observability/tracing wired in.** Nothing currently traces a run's prompts, latency, or the specialist-vs-frontier split per job.
 - **No auth.** The API and UI are wide open — fine for local/personal use, not for anything multi-user.
 - Training data leans template-heavy (FATURA is synthetic) and receipt-heavy (CORD/SROIE); real-world invoice layout diversity is still limited, so out-of-domain documents lean more on the frontier fallback.
