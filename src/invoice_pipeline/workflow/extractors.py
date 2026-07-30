@@ -1,13 +1,33 @@
 import asyncio
 from dataclasses import dataclass
+import json
 import logging
+from invoice_pipeline.util.pricing import parse_price
 from invoice_pipeline.workflow.error_categories import categorize_error
 from invoice_pipeline.workflow.images import load_image_b64
-from invoice_pipeline.schema import Invoice
+from invoice_pipeline.schema import Invoice, WireInvoice
 from langchain_anthropic import ChatAnthropic
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
+
+_MONEY_FIELDS = ("grand_total", "subtotal", "tax", "service_charge")
+_LINE_ITEM_MONEY_FIELDS = ("unit_price", "quantity", "line_total")
+
+
+def _parse_wire_invoice(data: dict) -> dict:
+    for field in _MONEY_FIELDS:
+        data[field] = parse_price(data.get(field))
+
+    raw_discount = data.get("discount")
+    if isinstance(raw_discount, str):
+        raw_discount = raw_discount.removeprefix("-")
+    data["discount"] = parse_price(raw_discount)
+
+    for item in data.get("line_items", []):
+        for field in _LINE_ITEM_MONEY_FIELDS:
+            item[field] = parse_price(item.get(field))
+    return data
 
 
 @dataclass
@@ -18,25 +38,16 @@ class ExtractionResult:
 
 class SpecialistExtractor:
     def __init__(
-        self, base_url: str, api_key: str, model_name: str = "qwen3-vl-fullds-merged-r8"
+        self,
+        base_url: str,
+        api_key: str,
+        model_name: str = "qwen3-vl-fullds-merged-r8",
+        seed: int | None = None,
     ):
         self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self._model_name = model_name
+        self._seed = seed
 
-    # TODO: replace manual JSON parsing with vLLM guided decoding
-    # (extra_body={"guided_json": ...}), which constrains generation to the
-    # schema during decoding instead of validating after the fact.
-    #
-    # Invoice.model_json_schema() can't be passed directly: Pydantic renders
-    # Decimal fields with a negative-lookahead pattern, which grammar backends
-    # compile to automata and can't express. Needs a separate wire schema with
-    # money as plain strings (parsed via the CORD price parser, which keeps
-    # locale info that a JSON number would destroy — "45.000" is 45000 IDR).
-    # Enums and simple regex (^[A-Z]{3}$, ISO dates) do compile and are worth
-    # keeping; "format": "date" is not enforced, so parsing stays.
-    #
-    # Measure the malformed-output rate first — the specialist is fine-tuned on
-    # this format, so the gain may not justify the second schema.
     async def extract_invoice(self, img_path: str) -> ExtractionResult:
         response = None
         try:
@@ -60,11 +71,20 @@ class SpecialistExtractor:
                         ],
                     }
                 ],
+                # vllm-openai >= 0.26 silently ignores the legacy guided_json / guided_decoding_backend params
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "WireInvoice",
+                        "schema": WireInvoice.model_json_schema(),
+                        "strict": True,
+                    },
+                },
+                seed=self._seed,
             )
+            data = _parse_wire_invoice(json.loads(response.choices[0].message.content))
             return ExtractionResult(
-                invoice=Invoice.model_validate_json(
-                    response.choices[0].message.content
-                ),
+                invoice=Invoice.model_validate(data),
                 parse_error=None,
             )
         except Exception as e:

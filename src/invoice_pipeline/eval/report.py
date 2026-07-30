@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Literal, TypeVar
 
@@ -170,4 +170,13 @@ def summarize(acc: EvaluationAccumulator) -> list[FieldReport]:
 
 def overall_scores(acc: EvaluationAccumulator) -> dict[str, float]:
     counts = list(acc.field_counts.values())
+    return {"macro_f1": macro_f1(counts), "micro_f1": micro_f1(counts)}
+
+
+def filtered_scores(
+    acc: EvaluationAccumulator, field_names: Iterable[str]
+) -> dict[str, float]:
+    counts = [
+        acc.field_counts[name] for name in field_names if name in acc.field_counts
+    ]
     return {"macro_f1": macro_f1(counts), "micro_f1": micro_f1(counts)}

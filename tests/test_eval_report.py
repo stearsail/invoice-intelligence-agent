@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from invoice_pipeline.eval.report import (
     EvaluationAccumulator,
+    filtered_scores,
     overall_scores,
     score_invoice,
     summarize,
@@ -146,3 +147,32 @@ def test_summarize_reports_both_accuracy_and_precision_recall_fields():
     assert by_name["document_type"].accuracy == 1.0
     assert by_name["invoice_number"].metric == "precision_recall_f1"
     assert by_name["invoice_number"].f1 == 1.0
+
+
+def test_filtered_scores_restricts_to_requested_fields():
+    acc = EvaluationAccumulator()
+    pred = _invoice(invoice_number="INV-001", due_date=None)
+    gold = _invoice(invoice_number="INV-001", due_date="2024-01-01")
+    score_invoice(acc, pred, gold)
+
+    full = overall_scores(acc)
+    invoice_number_only = filtered_scores(acc, ["invoice_number"])
+
+    assert invoice_number_only == {"macro_f1": 1.0, "micro_f1": 1.0}
+    assert full["macro_f1"] < 1.0
+
+
+def test_filtered_scores_ignores_unknown_field_names():
+    acc = EvaluationAccumulator()
+    score_invoice(acc, _invoice(), _invoice())
+
+    result = filtered_scores(acc, ["invoice_number", "not_a_real_field"])
+
+    assert result == {"macro_f1": 1.0, "micro_f1": 1.0}
+
+
+def test_filtered_scores_empty_selection_is_vacuously_perfect():
+    acc = EvaluationAccumulator()
+    score_invoice(acc, _invoice(), _invoice())
+
+    assert filtered_scores(acc, []) == {"macro_f1": 1.0, "micro_f1": 1.0}

@@ -7,8 +7,12 @@ import openai
 import pytest
 
 from invoice_pipeline.workflow import extractors
-from invoice_pipeline.workflow.extractors import FrontierExtractor, SpecialistExtractor
-from invoice_pipeline.schema import Invoice, LineItem
+from invoice_pipeline.workflow.extractors import (
+    FrontierExtractor,
+    SpecialistExtractor,
+    _parse_wire_invoice,
+)
+from invoice_pipeline.schema import Invoice, LineItem, WireInvoice
 
 
 def _invoice(**overrides) -> Invoice:
@@ -80,8 +84,10 @@ def no_real_image_io(monkeypatch):
     )
 
 
-def _specialist(client: MagicMock) -> SpecialistExtractor:
-    extractor = SpecialistExtractor("http://vllm.test/v1", "key", "test-model")
+def _specialist(client: MagicMock, seed: int | None = None) -> SpecialistExtractor:
+    extractor = SpecialistExtractor(
+        "http://vllm.test/v1", "key", "test-model", seed=seed
+    )
     extractor._client = client
     return extractor
 
@@ -123,6 +129,123 @@ async def test_specialist_reraises_connectivity_errors_for_arq_retry():
 
 
 @pytest.mark.anyio
+async def test_specialist_sends_wire_schema_via_response_format():
+    invoice = _invoice()
+    client = _fake_specialist_client(invoice.model_dump_json())
+    extractor = _specialist(client)
+
+    await extractor.extract_invoice("fake.png")
+
+    kwargs = client.chat.completions.create.await_args.kwargs
+    assert kwargs["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "WireInvoice",
+            "schema": WireInvoice.model_json_schema(),
+            "strict": True,
+        },
+    }
+    assert "extra_body" not in kwargs
+
+
+@pytest.mark.anyio
+async def test_specialist_parses_locale_formatted_wire_amounts():
+    raw = """{
+        "document_type": "invoice", "currency": "USD",
+        "grand_total": "20.000,00", "subtotal": "20.000,00",
+        "line_items": []
+    }"""
+    extractor = _specialist(_fake_specialist_client(raw))
+
+    result = await extractor.extract_invoice("fake.png")
+
+    assert result.parse_error is None
+    assert result.invoice.grand_total == Decimal("20000.00")
+
+
+@pytest.mark.anyio
+async def test_specialist_parses_negative_grand_total_from_wire_response():
+    raw = """{
+        "document_type": "invoice", "currency": "USD",
+        "grand_total": "-1500.00", "line_items": []
+    }"""
+    extractor = _specialist(_fake_specialist_client(raw))
+
+    result = await extractor.extract_invoice("fake.png")
+
+    assert result.parse_error is None
+    assert result.invoice.grand_total == Decimal("-1500.00")
+
+
+@pytest.mark.anyio
+async def test_specialist_strips_sign_from_wire_discount():
+    raw = """{
+        "document_type": "invoice", "currency": "USD",
+        "grand_total": "100.00", "discount": "-25.00", "line_items": []
+    }"""
+    extractor = _specialist(_fake_specialist_client(raw))
+
+    result = await extractor.extract_invoice("fake.png")
+
+    assert result.parse_error is None
+    assert result.invoice.discount == Decimal("25.00")
+
+
+def test_parse_wire_invoice_converts_top_level_money_fields():
+    data = {
+        "grand_total": "1.500,50",
+        "subtotal": "1.000,00",
+        "tax": "500,50",
+        "service_charge": None,
+        "discount": None,
+        "line_items": [],
+    }
+
+    result = _parse_wire_invoice(data)
+
+    assert result["grand_total"] == Decimal("1500.50")
+    assert result["subtotal"] == Decimal("1000.00")
+    assert result["tax"] == Decimal("500.50")
+    assert result["service_charge"] is None
+    assert result["discount"] is None
+
+
+def test_parse_wire_invoice_strips_sign_from_discount_only():
+    data = {
+        "grand_total": "-100.00",
+        "discount": "-10.00",
+        "line_items": [],
+    }
+
+    result = _parse_wire_invoice(data)
+
+    assert result["grand_total"] == Decimal("-100.00")
+    assert result["discount"] == Decimal("10.00")
+
+
+def test_parse_wire_invoice_converts_line_item_money_fields():
+    data = {
+        "grand_total": "100.00",
+        "discount": None,
+        "line_items": [
+            {
+                "description": "Widget",
+                "unit_price": "20,00",
+                "quantity": "2",
+                "line_total": "40,00",
+            }
+        ],
+    }
+
+    result = _parse_wire_invoice(data)
+
+    item = result["line_items"][0]
+    assert item["unit_price"] == Decimal("20.00")
+    assert item["quantity"] == Decimal("2")
+    assert item["line_total"] == Decimal("40.00")
+
+
+@pytest.mark.anyio
 async def test_specialist_sends_configured_model_name():
     invoice = _invoice()
     client = _fake_specialist_client(invoice.model_dump_json())
@@ -131,6 +254,28 @@ async def test_specialist_sends_configured_model_name():
     await extractor.extract_invoice("fake.png")
 
     assert client.chat.completions.create.await_args.kwargs["model"] == "test-model"
+
+
+@pytest.mark.anyio
+async def test_specialist_sends_configured_seed():
+    invoice = _invoice()
+    client = _fake_specialist_client(invoice.model_dump_json())
+    extractor = _specialist(client, seed=42)
+
+    await extractor.extract_invoice("fake.png")
+
+    assert client.chat.completions.create.await_args.kwargs["seed"] == 42
+
+
+@pytest.mark.anyio
+async def test_specialist_defaults_to_no_seed():
+    invoice = _invoice()
+    client = _fake_specialist_client(invoice.model_dump_json())
+    extractor = _specialist(client)
+
+    await extractor.extract_invoice("fake.png")
+
+    assert client.chat.completions.create.await_args.kwargs["seed"] is None
 
 
 @pytest.mark.anyio

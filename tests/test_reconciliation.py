@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from invoice_pipeline.reconciliation import reconcile
+from invoice_pipeline.util.reconciliation import reconcile
 from invoice_pipeline.schema import Invoice, LineItem
 
 

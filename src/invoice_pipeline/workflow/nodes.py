@@ -1,7 +1,7 @@
 from invoice_pipeline.workflow.extractors import FrontierExtractor, SpecialistExtractor
 from invoice_pipeline.workflow.state import State
 from invoice_pipeline.db.operations import find_duplicate, write_entry
-from invoice_pipeline.reconciliation import ReconciliationIssue, reconcile
+from invoice_pipeline.util.reconciliation import ReconciliationIssue, reconcile
 from invoice_pipeline.db.engine import session_factory
 
 

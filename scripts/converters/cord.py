@@ -2,6 +2,8 @@ import re
 from invoice_pipeline.schema import Invoice, LineItem
 from decimal import Decimal
 
+from invoice_pipeline.util.pricing import parse_price
+
 
 def _menu_items(obj: dict) -> list[dict]:
     menu = obj.get("menu")
@@ -24,26 +26,6 @@ def _parse_quantity(quantity: str | None) -> Decimal | None:
     return Decimal(match.group(1))
 
 
-# Prices appear as '20.000', '20,000', '20.000,00' or plain '8000'.
-_PRICE_RE = re.compile(r"(?:\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,]\d{1,2})?")
-
-
-def _parse_price(price: str | None) -> Decimal | None:
-    if not isinstance(price, str):
-        return None
-    cleaned = price.strip()
-    if _PRICE_RE.fullmatch(cleaned) is None:
-        return None
-    last_sep = max(cleaned.rfind("."), cleaned.rfind(","))
-    if last_sep == -1:
-        return Decimal(cleaned)
-    fraction = cleaned[last_sep + 1 :]
-    if len(fraction) == 3:
-        return Decimal(cleaned.replace(".", "").replace(",", ""))
-    integer_part = cleaned[:last_sep].replace(".", "").replace(",", "")
-    return Decimal(integer_part + "." + fraction)
-
-
 def _sub_total_section(obj: dict) -> dict:
     sub_total = obj.get("sub_total")
     if sub_total is None:
@@ -55,10 +37,10 @@ def _sub_total_section(obj: dict) -> dict:
 
 def _parse_amount(value: str | list[str] | None) -> Decimal | None:
     if isinstance(value, list):
-        parts = [_parse_price(v) for v in value]
+        parts = [parse_price(v) for v in value]
         present = [p for p in parts if p is not None]
         return present[0] if present else None
-    return _parse_price(value)
+    return parse_price(value)
 
 
 # drop sign for negative discount values (-5.400)
@@ -72,7 +54,7 @@ def _drop_sign(value: str | list[str] | None) -> str | list[str] | None:
 
 def convert_example(gt_parse: dict) -> Invoice:
 
-    total_price = _parse_price((gt_parse.get("total") or {}).get("total_price"))
+    total_price = parse_price((gt_parse.get("total") or {}).get("total_price"))
 
     sub_total = _sub_total_section(gt_parse)
     subtotal = _parse_amount(sub_total.get("subtotal_price"))
@@ -88,8 +70,8 @@ def convert_example(gt_parse: dict) -> Invoice:
         raw_li_total_price = item.get("price")
 
         li_quantity = _parse_quantity(raw_li_quantity)
-        li_unit_price = _parse_price(raw_li_unit_price)
-        li_total_price = _parse_price(raw_li_total_price)
+        li_unit_price = parse_price(raw_li_unit_price)
+        li_total_price = parse_price(raw_li_total_price)
 
         li = LineItem(
             description=li_desc,

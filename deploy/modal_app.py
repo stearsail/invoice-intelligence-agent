@@ -5,7 +5,7 @@ import modal
 app = modal.App(
     "vllm-serve-qwen",
     image=modal.Image.from_registry(
-        "vllm/vllm-openai:v0.19.1",
+        "vllm/vllm-openai:v0.26.0",
         add_python="3.11",
     ).entrypoint([]),
 )

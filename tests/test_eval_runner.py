@@ -127,6 +127,57 @@ def test_print_report_flags_total_parse_failure_instead_of_fake_perfect_score(ca
     assert "macro-F1" not in output
 
 
+@pytest.mark.anyio
+async def test_print_report_includes_per_source_field_breakdown(capsys):
+    fatura_invoice = _invoice(document_type="invoice")
+    sroie_invoice = _invoice(document_type="receipt")
+    records = [
+        GoldRecord(source="fatura", gold=fatura_invoice, image_path=Path("a.png")),
+        GoldRecord(source="sroie", gold=sroie_invoice, image_path=Path("b.png")),
+    ]
+    predictor = _FakePredictor(
+        {
+            "a.png": ExtractionResult(invoice=fatura_invoice, parse_error=None),
+            "b.png": ExtractionResult(invoice=sroie_invoice, parse_error=None),
+        }
+    )
+
+    run = await evaluate(predictor, records)
+    print_report(run)
+
+    output = capsys.readouterr().out
+    assert "[fatura] macro-F1=" in output
+    assert "[sroie] macro-F1=" in output
+    fatura_section = output.split("[fatura]")[1].split("[sroie]")[0]
+    assert "document_type" in fatura_section
+
+
+@pytest.mark.anyio
+async def test_print_report_adds_trained_fields_diagnostic_for_sroie_only(capsys):
+    fatura_invoice = _invoice(document_type="invoice")
+    sroie_invoice = _invoice(document_type="receipt")
+    records = [
+        GoldRecord(source="fatura", gold=fatura_invoice, image_path=Path("a.png")),
+        GoldRecord(source="sroie", gold=sroie_invoice, image_path=Path("b.png")),
+    ]
+    predictor = _FakePredictor(
+        {
+            "a.png": ExtractionResult(invoice=fatura_invoice, parse_error=None),
+            "b.png": ExtractionResult(invoice=sroie_invoice, parse_error=None),
+        }
+    )
+
+    run = await evaluate(predictor, records)
+    print_report(run)
+
+    output = capsys.readouterr().out
+    sroie_section = output.split("[sroie]", 1)[1]
+    assert "trained-fields-only" in sroie_section
+
+    fatura_section = output.split("[fatura]")[1].split("[sroie]")[0]
+    assert "trained-fields-only" not in fatura_section
+
+
 def test_build_predictor_frontier_defaults_to_config_model(monkeypatch):
     monkeypatch.setattr(config, "FRONTIER_MODEL", "claude-haiku-4-5-20251001")
     predictor = _build_predictor("frontier")
@@ -146,6 +197,20 @@ def test_build_predictor_specialist_uses_override_model(monkeypatch):
     predictor = _build_predictor("specialist", model="custom-checkpoint")
     assert isinstance(predictor, SpecialistExtractor)
     assert predictor._model_name == "custom-checkpoint"
+
+
+def test_build_predictor_specialist_passes_seed_through(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(config, "VLLM_API_KEY", "fake-key")
+    predictor = _build_predictor("specialist", seed=42)
+    assert predictor._seed == 42
+
+
+def test_build_predictor_specialist_defaults_to_no_seed(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_BASE_URL", "http://fake")
+    monkeypatch.setattr(config, "VLLM_API_KEY", "fake-key")
+    predictor = _build_predictor("specialist")
+    assert predictor._seed is None
 
 
 def test_build_predictor_unknown_extractor_raises():

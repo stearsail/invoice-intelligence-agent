@@ -1,3 +1,5 @@
+import json
+
 import anthropic
 import openai
 from pydantic import ValidationError
@@ -27,6 +29,6 @@ def categorize_error(exc: Exception) -> str:
         return "connectivity"
     if isinstance(exc, FileNotFoundError):
         return "missing_file"
-    if isinstance(exc, ValidationError):
+    if isinstance(exc, (ValidationError, json.JSONDecodeError)):
         return "invalid_output"
     return "unknown"

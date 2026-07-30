@@ -10,6 +10,7 @@ from invoice_pipeline import config
 from invoice_pipeline.eval.metrics import accuracy
 from invoice_pipeline.eval.report import (
     EvaluationAccumulator,
+    filtered_scores,
     overall_scores,
     score_invoice,
     summarize,
@@ -23,6 +24,18 @@ from invoice_pipeline.workflow.extractors import (
 
 GOLDEN_SET_PATH = config.PROJECT_ROOT / "data" / "golden" / "test.jsonl"
 IMAGE_ROOT = config.PROJECT_ROOT / "data" / "processed"
+
+# rajistics/sroie (the HF source behind data/processed/SROIE) only ever
+# carries company/date/address/total per example — 0% coverage for every
+# other field across all 624 training rows, vs. the golden set's own SROIE
+# docs having e.g. invoice_number 88% of the time. The model was never
+# taught these fields for SROIE-shaped input. This restricts a diagnostic
+# score to the fields it actually got trained on, to separate "the model is
+# bad at this" from "the training data never covered this" — it does NOT
+# replace the full, honest per-source score above it.
+_TRAINED_FIELDS_BY_SOURCE: dict[str, tuple[str, ...]] = {
+    "sroie": ("vendor", "vendor.name", "vendor.address", "issue_date"),
+}
 
 
 class Predictor(Protocol):
@@ -102,6 +115,19 @@ async def evaluate(
     return run
 
 
+def _print_field_breakdown(acc: EvaluationAccumulator) -> None:
+    for report in summarize(acc):
+        if report.metric == "accuracy":
+            print(
+                f"  {report.name:<24} accuracy={report.accuracy:.3f} (n={report.support})"
+            )
+        else:
+            print(
+                f"  {report.name:<24} precision={report.precision:.3f} "
+                f"recall={report.recall:.3f} f1={report.f1:.3f} (n={report.support})"
+            )
+
+
 def print_report(run: EvaluationRun) -> None:
     print(f"Documents evaluated: {run.total}")
     print(f"Schema-conformance rate: {schema_conformance_rate(run):.1%}")
@@ -121,16 +147,7 @@ def print_report(run: EvaluationRun) -> None:
     print(f"Overall micro-F1: {scores['micro_f1']:.3f}")
 
     print("\nPer-field breakdown:")
-    for report in summarize(run.overall):
-        if report.metric == "accuracy":
-            print(
-                f"  {report.name:<24} accuracy={report.accuracy:.3f} (n={report.support})"
-            )
-        else:
-            print(
-                f"  {report.name:<24} precision={report.precision:.3f} "
-                f"recall={report.recall:.3f} f1={report.f1:.3f} (n={report.support})"
-            )
+    _print_field_breakdown(run.overall)
 
     for source, acc in sorted(run.by_source.items()):
         source_scores = overall_scores(acc)
@@ -138,14 +155,27 @@ def print_report(run: EvaluationRun) -> None:
             f"\n[{source}] macro-F1={source_scores['macro_f1']:.3f} "
             f"micro-F1={source_scores['micro_f1']:.3f}"
         )
+        _print_field_breakdown(acc)
+
+        trained_fields = _TRAINED_FIELDS_BY_SOURCE.get(source)
+        if trained_fields:
+            trained_scores = filtered_scores(acc, trained_fields)
+            print(
+                f"  [{source}] trained-fields-only ({', '.join(trained_fields)}): "
+                f"macro-F1={trained_scores['macro_f1']:.3f} "
+                f"micro-F1={trained_scores['micro_f1']:.3f}"
+            )
 
 
-def _build_predictor(name: str, model: str | None = None) -> Predictor:
+def _build_predictor(
+    name: str, model: str | None = None, seed: int | None = None
+) -> Predictor:
     if name == "specialist":
         return SpecialistExtractor(
             base_url=config.VLLM_BASE_URL,
             api_key=config.VLLM_API_KEY,
             model_name=model or config.SPECIALIST_MODEL,
+            seed=seed,
         )
     if name == "frontier":
         return FrontierExtractor(model_name=model or config.FRONTIER_MODEL)
@@ -166,11 +196,25 @@ def main() -> None:
         help="Override the model name (defaults to config.FRONTIER_MODEL / "
         "config.SPECIALIST_MODEL depending on --extractor)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed for reproducible sampling. Only affects --extractor specialist "
+        "(vLLM/OpenAI-compatible) — Anthropic's API has no seed parameter, so this "
+        "is ignored for --extractor frontier.",
+    )
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--golden-set", type=Path, default=GOLDEN_SET_PATH)
     args = parser.parse_args()
 
-    predictor = _build_predictor(args.extractor, model=args.model)
+    if args.extractor == "frontier":
+        print(
+            "Note: --seed has no effect for --extractor frontier "
+            "(Anthropic's API has no seed parameter)."
+        )
+
+    predictor = _build_predictor(args.extractor, model=args.model, seed=args.seed)
     golden_set = load_golden_set(args.golden_set)
     run = asyncio.run(evaluate(predictor, golden_set, concurrency=args.concurrency))
     print_report(run)

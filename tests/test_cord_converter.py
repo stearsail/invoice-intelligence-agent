@@ -7,11 +7,12 @@ from scripts.converters.cord import (
     _drop_sign,
     _menu_items,
     _parse_amount,
-    _parse_price,
     _parse_quantity,
     _sub_total_section,
     convert_example,
 )
+
+from invoice_pipeline.util.pricing import parse_price
 
 
 @pytest.mark.parametrize(
@@ -27,13 +28,14 @@ from scripts.converters.cord import (
         ("20.000,00", Decimal("20000.00")),
         ("20.00", Decimal("20.00")),
         ("12,5", Decimal("12.5")),
-        ("-5,400", None),
+        ("-5,400", Decimal("-5400")),
+        ("-20.000,00", Decimal("-20000.00")),
         ("Rp 20.000", None),
         ("abc", None),
     ],
 )
 def test_parse_price(raw, expected):
-    assert _parse_price(raw) == expected
+    assert parse_price(raw) == expected
 
 
 @pytest.mark.parametrize(
