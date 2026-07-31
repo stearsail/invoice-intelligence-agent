@@ -6,7 +6,7 @@ Every routing decision — retry, fallback, when to stop — is plain code check
 
 This is a personal project built to practice taking an LLM system all the way from *fine-tuning a model* to *running it as a service* — dataset preparation, training, serving, workflow orchestration, a task queue, a persistent ledger, an API, and a UI.
 
-On a 124-document human-verified holdout, the fine-tuned 4B specialist reaches **0.915 macro-F1 / 0.958 micro-F1 with 100% schema conformance** — ahead of a Claude Opus 5 reference ceiling (0.879 / 0.955) on accuracy, behind it on latency. Details in [Evaluation](#evaluation).
+On a 124-document human-verified holdout, the fine-tuned 4B specialist reaches **0.915 macro-F1 / 0.958 micro-F1 with 100% schema conformance** — ahead of a Claude Opus 5 reference ceiling (0.879 / 0.955) on accuracy, behind it on latency, and far ahead of the untuned base model it was tuned from (0.570 / 0.699). Details in [Evaluation](#evaluation).
 
 ## What it does
 
@@ -59,7 +59,7 @@ The code is layered so each concern has one owner:
 | [`queue/pool.py`](src/invoice_pipeline/queue/pool.py) | The Redis connection pool the API enqueues jobs through |
 | [`config.py`](src/invoice_pipeline/config.py) | Model, queue, and upload-path settings |
 
-The graph's internal state never escapes the workflow package, so the HTTP layer stays purely about HTTP. Validation logic lives in [`reconciliation.py`](src/invoice_pipeline/reconciliation.py).
+The graph's internal state never escapes the workflow package, so the HTTP layer stays purely about HTTP. Validation logic lives in [`reconciliation.py`](src/invoice_pipeline/util/reconciliation.py).
 
 ## The model
 
@@ -81,32 +81,36 @@ The benchmark set at `data/golden/test.jsonl` is **124 human-verified documents*
 
 ## Evaluation
 
-[`src/invoice_pipeline/eval/`](src/invoice_pipeline/eval/) runs an extractor over the 124-document golden set and scores each prediction against the human-verified gold record, field by field. Two arms: the **specialist** (fine-tuned Qwen3-VL-4B on a Modal L4) and **Claude Opus 5** as a *reference ceiling* — deliberately stronger than the Haiku 4.5 that serves as the actual production fallback, so the specialist is measured against a good frontier result rather than a convenient one.
+[`src/invoice_pipeline/eval/`](src/invoice_pipeline/eval/) runs an extractor over the 124-document golden set and scores each prediction against the human-verified gold record, field by field. Three arms: the **specialist** (fine-tuned Qwen3-VL-4B on a Modal L4); **Claude Opus 5** as a *reference ceiling* — deliberately stronger than the Haiku 4.5 that serves as the actual production fallback, so the specialist is measured against a good frontier result rather than a convenient one; and the **untuned base model** as the *before picture*, so the table shows what the fine-tuning itself bought.
+
+The base arm serves [`unsloth/Qwen3-VL-4B-Instruct-bnb-4bit`](https://huggingface.co/unsloth/Qwen3-VL-4B-Instruct-bnb-4bit) via [`deploy/modal_app_base.py`](deploy/modal_app_base.py), with the same constrained decoding and prompt as the specialist. One honest caveat: it is not bit-identical to the training base — fine-tuning started from the *dynamic*-quant checkpoint (`-unsloth-bnb-4bit`), whose sublayer-granular quantization skip list vLLM's fused-weight loader cannot reconcile, so the uniformly-quantized variant of the same base model stands in.
 
 ### Headline
 
-| | Specialist (Qwen3-VL-4B, LoRA) | Claude Opus 5 (ceiling) |
-|---|---|---|
-| Documents | 124 | 124 |
-| Schema conformance | 100.0% | 100.0% |
-| Overall macro-F1 | **0.915** | 0.879 |
-| Overall micro-F1 | **0.958** | 0.955 |
-| Latency p50 | 13.89s | **8.88s** |
-| Latency p95 | 19.95s | **11.52s** |
+| | Specialist (Qwen3-VL-4B, LoRA) | Claude Opus 5 (ceiling) | Base Qwen3-VL-4B (untuned) |
+|---|---|---|---|
+| Documents | 124 | 124 | 124 |
+| Schema conformance | 100.0% | 100.0% | 96.8% |
+| Overall macro-F1 | **0.915** | 0.879 | 0.570 |
+| Overall micro-F1 | **0.958** | 0.955 | 0.699 |
+| Latency p50 | 13.89s | **8.88s** | 8.93s |
+| Latency p95 | 19.95s | **11.52s** | 18.20s |
 
-Both arms parsed into a valid `Invoice` on all 124 documents. For the specialist that comes from constrained decoding — the request pins `response_format` to a strict `json_schema`, so vLLM can only emit tokens the grammar admits. Before that was wired in, malformed output was the main driver of frontier fallbacks.
+The specialist and Opus parsed into a valid `Invoice` on all 124 documents. For the specialist that comes from constrained decoding — the request pins `response_format` to a strict `json_schema`, so vLLM can only emit tokens the grammar admits. Before that was wired in, malformed output was the main driver of frontier fallbacks. The base model's four failures are the interesting exception: constrained decoding guarantees token-level shape, not completion (see below).
 
 ### By source
 
-| Source | n | Specialist macro / micro | Opus 5 macro / micro |
-|---|---|---|---|
-| CORD (receipts) | 26 | **0.915** / 0.920 | 0.820 / 0.875 |
-| FATURA (synthetic invoices) | 81 | **0.904** / **0.983** | 0.891 / 0.981 |
-| SROIE (receipts) | 17 | 0.759 / 0.649 | 0.722 / **0.878** |
-| SROIE, trained fields only | 17 | 0.947 / 0.947 | **0.971** / **0.971** |
+| Source | n | Specialist macro / micro | Opus 5 macro / micro | Base macro / micro |
+|---|---|---|---|---|
+| CORD (receipts) | 26 | **0.915** / 0.920 | 0.820 / 0.875 | 0.359 / 0.692 |
+| FATURA (synthetic invoices) | 81 | **0.904** / **0.983** | 0.891 / 0.981 | 0.585 / 0.699 |
+| SROIE (receipts) | 17 | 0.759 / 0.649 | 0.722 / **0.878** | 0.531 / 0.707 |
+| SROIE, trained fields only | 17 | 0.947 / 0.947 | **0.971** / **0.971** | 0.830 / 0.823 |
 
 ### What the numbers say
 
+- **Fine-tuning bought +0.345 macro-F1 / +0.259 micro-F1 over the untuned base** — and the gap is behavioral, not perceptual. The base model *reads* documents fairly well (`vendor.name` 0.979, `line_items.quantity` 0.953, SROIE `grand_total` 0.941); what it lacks is the schema's discipline. It fabricates instead of emitting `null` (`discount` precision 0.161; `issue_date` F1 0.374, inventing dates — some in the year 1712 — on documents that show none), omits `unit_price` almost entirely (recall 0.097), calls SROIE receipts invoices (`document_type` accuracy 0.059 there), and guesses currencies (SROIE 0.176, CORD 0.440). Null-discipline and per-source conventions are exactly what the fine-tune taught.
+- **The base model's parse failures are decoding stalls, not malformed JSON.** `grand_total` is required and grammar-locked to digits; when the base model can't find a total, everything it prefers to emit — `null`, prose, or simply stopping — is masked, leaving only whitespace and digits legal. So it emits newlines (or one endless `1000.0000…`) until the token budget dies, and the truncated JSON fails to parse. Three of its four failures are this stall; the fourth produced a price the locale-aware parser rightly rejected. The specialist never stalls: its trained output habits and the grammar agree.
 - **The specialist wins on macro-F1 because it hallucinates less.** Opus 5's losses are concentrated in fields it invents where the gold record has nothing — 30 nonexistent vendors (`vendor` precision 0.720 vs. the specialist's 0.987) and 17 fabricated `vendor.tax_id`s, all on receipts that have none. Recall is 1.000 on those fields for both arms: the frontier isn't missing anything, it's adding things. Fine-tuning taught the schema's null convention in a way prompting did not.
 - **The specialist's failure mode is the mirror image: it omits — and it's almost all SROIE.** 44 of its 47 missed line items are on that source (`line_items` F1 0.136 there; `invoice_number` never emitted). This is label coverage, not capacity: the SROIE training source only ever labels company/date/address/total, so the model learned that receipt-shaped input has nothing else. Restricted to those four trained fields it scores 0.947. The fix is relabeling SROIE, not retraining harder.
 - **The frontier is ahead on `grand_total`** (0.960 vs. 0.903) — and both models are weakest on `subtotal` and `tax` (F1 ≈ 0.75–0.80), exactly the fields the reconciliation step recomputes.
@@ -115,35 +119,35 @@ Both arms parsed into a valid `Invoice` on all 124 documents. For the specialist
 <details>
 <summary><strong>Per-field breakdown</strong> (overall, 124 documents)</summary>
 
-`document_type`, `currency`, and `grand_total` are required, so they are scored as accuracy and excluded from the macro/micro-F1 figures, which cover the nullable fields only. `n` is the field's support (`tp + fp + fn`). Per-source breakdowns come from the same runner (see [Reproducing](#reproducing)).
+`document_type`, `currency`, and `grand_total` are required, so they are scored as accuracy and excluded from the macro/micro-F1 figures, which cover the nullable fields only. `n` is the field's support (`tp + fp + fn`) — for the base model it reflects the 120 documents it parsed, and hallucinated values inflate it (e.g. `issue_date` n=161 vs. 96 gold instances: invented dates count as both fp and support). Per-source breakdowns come from the same runner (see [Reproducing](#reproducing)).
 
-| Field | Metric | Specialist | Opus 5 |
-|---|---|---|---|
-| `document_type` | accuracy | **1.000** (124) | 0.984 (124) |
-| `currency` | accuracy | **0.992** (124) | 0.976 (124) |
-| `grand_total` | accuracy | 0.903 (124) | **0.960** (124) |
-| `invoice_number` | P / R / F1 | 1.000 / 0.835 / 0.910 (91) | 0.978 / 1.000 / **0.989** (93) |
-| `issue_date` | P / R / F1 | 0.978 / 0.958 / 0.968 (97) | 0.989 / 0.989 / **0.989** (96) |
-| `due_date` | P / R / F1 | 1.000 / 0.905 / **0.950** (42) | 0.930 / 0.952 / 0.941 (45) |
-| `subtotal` | P / R / F1 | 0.818 / 0.717 / **0.764** (131) | 0.800 / 0.708 / 0.751 (133) |
-| `tax` | P / R / F1 | 0.821 / 0.719 / 0.767 (74) | 0.768 / 0.828 / **0.797** (80) |
-| `service_charge` | P / R / F1 | 0.750 / 0.600 / **0.667** (6) | 0.500 / 0.600 / 0.545 (8) |
-| `discount` | P / R / F1 | 0.812 / 0.765 / 0.788 (20) | 0.727 / 0.941 / **0.821** (23) |
-| `vendor` | P / R / F1 | 0.987 / 1.000 / **0.994** (78) | 0.720 / 1.000 / 0.837 (107) |
-| `vendor.name` | P / R / F1 | 0.974 / 0.974 / 0.974 (79) | 0.987 / 0.987 / **0.987** (78) |
-| `vendor.address` | P / R / F1 | 0.984 / 0.984 / 0.984 (65) | 0.970 / 1.000 / **0.985** (66) |
-| `vendor.tax_id` | P / R / F1 | 1.000 / 1.000 / **1.000** (17) | 0.500 / 1.000 / 0.667 (34) |
-| `vendor.iban` | P / R / F1 | 0.333 / 1.000 / **0.500** (3) | 0.100 / 1.000 / 0.182 (10) |
-| `customer` | P / R / F1 | 1.000 / 1.000 / **1.000** (71) | 0.947 / 1.000 / 0.973 (75) |
-| `customer.name` | P / R / F1 | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (71) |
-| `customer.address` | P / R / F1 | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (71) |
-| `customer.tax_id` | P / R / F1 | 1.000 / 1.000 / 1.000 (4) | 1.000 / 1.000 / 1.000 (4) |
-| `customer.iban` | P / R / F1 | 1.000 / 1.000 / 1.000 (0) | 1.000 / 1.000 / 1.000 (0) |
-| `line_items` | P / R / F1 | 0.972 / 0.880 / 0.923 (401) | 0.970 / 0.992 / **0.981** (403) |
-| `line_items.description` | P / R / F1 | 0.994 / 0.994 / **0.994** (346) | 0.966 / 0.966 / 0.966 (401) |
-| `line_items.unit_price` | P / R / F1 | 0.967 / 0.987 / **0.977** (309) | 0.910 / 0.994 / 0.950 (368) |
-| `line_items.quantity` | P / R / F1 | 0.997 / 0.991 / **0.994** (342) | 0.990 / 0.995 / 0.992 (389) |
-| `line_items.line_total` | P / R / F1 | 0.977 / 0.977 / 0.977 (352) | 0.990 / 0.990 / **0.990** (392) |
+| Field | Metric | Specialist | Opus 5 | Base (untuned) |
+|---|---|---|---|---|
+| `document_type` | accuracy | **1.000** (124) | 0.984 (124) | 0.867 (120) |
+| `currency` | accuracy | **0.992** (124) | 0.976 (124) | 0.767 (120) |
+| `grand_total` | accuracy | 0.903 (124) | **0.960** (124) | 0.858 (120) |
+| `invoice_number` | P / R / F1 | 1.000 / 0.835 / 0.910 (91) | 0.978 / 1.000 / **0.989** (93) | 0.800 / 1.000 / 0.889 (110) |
+| `issue_date` | P / R / F1 | 0.978 / 0.958 / 0.968 (97) | 0.989 / 0.989 / **0.989** (96) | 0.349 / 0.402 / 0.374 (161) |
+| `due_date` | P / R / F1 | 1.000 / 0.905 / **0.950** (42) | 0.930 / 0.952 / 0.941 (45) | 0.383 / 0.462 / 0.419 (68) |
+| `subtotal` | P / R / F1 | 0.818 / 0.717 / **0.764** (131) | 0.800 / 0.708 / 0.751 (133) | 0.906 / 0.266 / 0.411 (112) |
+| `tax` | P / R / F1 | 0.821 / 0.719 / 0.767 (74) | 0.768 / 0.828 / **0.797** (80) | 0.600 / 0.750 / 0.667 (90) |
+| `service_charge` | P / R / F1 | 0.750 / 0.600 / **0.667** (6) | 0.500 / 0.600 / 0.545 (8) | 0.333 / 0.250 / 0.286 (6) |
+| `discount` | P / R / F1 | 0.812 / 0.765 / 0.788 (20) | 0.727 / 0.941 / **0.821** (23) | 0.161 / 0.933 / 0.275 (88) |
+| `vendor` | P / R / F1 | 0.987 / 1.000 / **0.994** (78) | 0.720 / 1.000 / 0.837 (107) | 0.839 / 0.635 / 0.723 (83) |
+| `vendor.name` | P / R / F1 | 0.974 / 0.974 / 0.974 (79) | 0.987 / 0.987 / **0.987** (78) | 0.979 / 0.979 / 0.979 (48) |
+| `vendor.address` | P / R / F1 | 0.984 / 0.984 / 0.984 (65) | 0.970 / 1.000 / **0.985** (66) | 0.857 / 0.973 / 0.911 (43) |
+| `vendor.tax_id` | P / R / F1 | 1.000 / 1.000 / **1.000** (17) | 0.500 / 1.000 / 0.667 (34) | 0.333 / 1.000 / 0.500 (42) |
+| `vendor.iban` | P / R / F1 | 0.333 / 1.000 / **0.500** (3) | 0.100 / 1.000 / 0.182 (10) | 0.000 / 1.000 / 0.000 (31) |
+| `customer` | P / R / F1 | 1.000 / 1.000 / **1.000** (71) | 0.947 / 1.000 / 0.973 (75) | 0.483 / 0.412 / 0.444 (98) |
+| `customer.name` | P / R / F1 | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (28) |
+| `customer.address` | P / R / F1 | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (71) | 1.000 / 1.000 / 1.000 (28) |
+| `customer.tax_id` | P / R / F1 | 1.000 / 1.000 / 1.000 (4) | 1.000 / 1.000 / 1.000 (4) | 0.071 / 1.000 / 0.133 (28) |
+| `customer.iban` | P / R / F1 | 1.000 / 1.000 / 1.000 (0) | 1.000 / 1.000 / 1.000 (0) | 0.000 / 1.000 / 0.000 (27) |
+| `line_items` | P / R / F1 | 0.972 / 0.880 / 0.923 (401) | 0.970 / 0.992 / **0.981** (403) | 0.932 / 0.673 / 0.782 (385) |
+| `line_items.description` | P / R / F1 | 0.994 / 0.994 / **0.994** (346) | 0.966 / 0.966 / 0.966 (401) | 0.964 / 0.656 / 0.781 (253) |
+| `line_items.unit_price` | P / R / F1 | 0.967 / 0.987 / **0.977** (309) | 0.910 / 0.994 / 0.950 (368) | 0.909 / 0.097 / 0.175 (209) |
+| `line_items.quantity` | P / R / F1 | 0.997 / 0.991 / **0.994** (342) | 0.990 / 0.995 / 0.992 (389) | 0.947 / 0.959 / 0.953 (256) |
+| `line_items.line_total` | P / R / F1 | 0.977 / 0.977 / 0.977 (352) | 0.990 / 0.990 / **0.990** (392) | 0.846 / 0.846 / 0.846 (285) |
 
 </details>
 
@@ -158,6 +162,12 @@ Requires the golden set under `data/` and a running specialist endpoint:
 ```bash
 uv run python -m invoice_pipeline.eval.runner --extractor specialist --seed 42
 uv run python -m invoice_pipeline.eval.runner --extractor frontier --model claude-opus-5
+
+# base-model arm: deploy the untuned 4-bit checkpoint as a second endpoint
+# (deploy/modal_app_base.py), then point the runner at it
+uv run python -m invoice_pipeline.eval.runner --extractor specialist \
+  --base-url https://<workspace>--vllm-serve-qwen-base-serve.modal.run/v1 \
+  --model qwen3-vl-4b-base
 ```
 
 ## The schema
@@ -225,7 +235,7 @@ Model, queue, and upload settings load in [`config.py`](src/invoice_pipeline/con
 This is an actively-developed learning project, not a production product. Honest caveats:
 
 - **The benchmark set is small and single-reviewer.** 124 documents verified by one person, with single-digit support on some fields — individual per-field numbers carry wide error bars; the headline macro/micro-F1 figures are the ones that hold up.
-- **No base-model arm.** The eval doesn't compare against un-tuned Qwen3-VL-4B, so it shows where the specialist stands, not how much the fine-tuning itself bought. That's the obvious next run — along with per-document cost, which the routing design is premised on but the harness doesn't measure.
+- **No per-document cost measurement.** The routing design is premised on cost, but the harness doesn't measure it: the frontier arm bills per token while the specialist bills GPU-time on an autoscaling container, and collapsing those into one honest $/document figure requires utilization assumptions this project deliberately doesn't commit to.
 - **No observability/tracing wired in.** Nothing currently traces a run's prompts, latency, or the specialist-vs-frontier split per job.
 - **No auth.** The API and UI are wide open — fine for local/personal use, not for anything multi-user.
 - Training data leans template-heavy (FATURA is synthetic) and receipt-heavy (CORD/SROIE); real-world invoice layout diversity is still limited, so out-of-domain documents lean more on the frontier fallback.

@@ -213,6 +213,20 @@ def test_build_predictor_specialist_defaults_to_no_seed(monkeypatch):
     assert predictor._seed is None
 
 
+def test_build_predictor_specialist_uses_override_base_url(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_BASE_URL", "http://fake-default")
+    monkeypatch.setattr(config, "VLLM_API_KEY", "fake-key")
+    predictor = _build_predictor("specialist", base_url="http://fake-override")
+    assert str(predictor._client.base_url) == "http://fake-override"
+
+
+def test_build_predictor_specialist_defaults_to_config_base_url(monkeypatch):
+    monkeypatch.setattr(config, "VLLM_BASE_URL", "http://fake-default")
+    monkeypatch.setattr(config, "VLLM_API_KEY", "fake-key")
+    predictor = _build_predictor("specialist")
+    assert str(predictor._client.base_url) == "http://fake-default"
+
+
 def test_build_predictor_unknown_extractor_raises():
     with pytest.raises(ValueError, match="Unknown extractor"):
         _build_predictor("gpt4-mini")

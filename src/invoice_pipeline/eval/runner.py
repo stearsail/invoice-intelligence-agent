@@ -168,11 +168,14 @@ def print_report(run: EvaluationRun) -> None:
 
 
 def _build_predictor(
-    name: str, model: str | None = None, seed: int | None = None
+    name: str,
+    model: str | None = None,
+    seed: int | None = None,
+    base_url: str | None = None,
 ) -> Predictor:
     if name == "specialist":
         return SpecialistExtractor(
-            base_url=config.VLLM_BASE_URL,
+            base_url=base_url or config.VLLM_BASE_URL,
             api_key=config.VLLM_API_KEY,
             model_name=model or config.SPECIALIST_MODEL,
             seed=seed,
@@ -204,6 +207,14 @@ def main() -> None:
         "(vLLM/OpenAI-compatible) — Anthropic's API has no seed parameter, so this "
         "is ignored for --extractor frontier.",
     )
+    parser.add_argument(
+        "--base-url",
+        type=str,
+        default=None,
+        help="Override the vLLM base URL (defaults to config.VLLM_BASE_URL). "
+        "Only relevant for --extractor specialist — e.g. pointing at a separate "
+        "deployment serving a different checkpoint for comparison.",
+    )
     parser.add_argument("--concurrency", type=int, default=5)
     parser.add_argument("--golden-set", type=Path, default=GOLDEN_SET_PATH)
     args = parser.parse_args()
@@ -214,7 +225,9 @@ def main() -> None:
             "(Anthropic's API has no seed parameter)."
         )
 
-    predictor = _build_predictor(args.extractor, model=args.model, seed=args.seed)
+    predictor = _build_predictor(
+        args.extractor, model=args.model, seed=args.seed, base_url=args.base_url
+    )
     golden_set = load_golden_set(args.golden_set)
     run = asyncio.run(evaluate(predictor, golden_set, concurrency=args.concurrency))
     print_report(run)
