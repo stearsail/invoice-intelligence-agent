@@ -24,7 +24,11 @@ The design goal for model routing is cost: the cheap specialist handles the comm
 
 A React SPA uploads to a FastAPI backend, which saves the job and enqueues it on a Redis-backed task queue. A separate **Arq worker** process runs the extraction workflow and writes the outcome to Postgres — durable by design, so a backend restart mid-extraction doesn't lose in-flight work the way an in-process background task would.
 
-The workflow itself is a LangGraph state machine with conditional routing, generated directly from the compiled graph:
+![Runtime architecture: a browser-side React SPA and a human reviewer on the left, a self-hosted Docker Compose stack in the middle running FastAPI, Redis, Postgres and a pool of Arq workers, and managed model services on the right — a fine-tuned Qwen3-VL served by vLLM on a Modal GPU, plus a frontier-model fallback](docs/invoice-pipeline-dark.png)
+
+Zones are deployment boundaries: everything in the middle is one `docker compose up`, and the two model endpoints on the right are the only infrastructure not run locally. The numbered edges carry the routing decision the project argues for — ① is unconditional, ② fires only when the specialist's output fails to parse or reconcile. The loop closes back where it started: the entry is written *pending review* no matter which model drafted it, and nothing is final until the reviewer confirms it through the same UI they uploaded from.
+
+The interior of the worker box is a LangGraph state machine with conditional routing, generated directly from the compiled graph:
 
 ![Extraction workflow graph](docs/workflow-graph.png)
 
